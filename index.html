@@ -14,9 +14,9 @@
 </head>
 <body>
 
-<div id="loading">
+<div id="loading" role="status" aria-live="polite">
   <div class="ring"></div>
-  <p>山河展开中</p>
+  <p>山河入画中…</p>
 </div>
 
 <canvas class="stars" id="stars" aria-hidden="true"></canvas>
@@ -38,14 +38,14 @@
 </button>
 
 <div id="map-wrap">
-  <svg id="map" aria-label="中国互动地图，可点击或使用键盘选择省份"></svg>
+  <svg id="map" role="region" aria-label="中国互动足迹地图，可点击或使用键盘选择省份"></svg>
 </div>
 
 <div id="inset-wrap" aria-hidden="true">
   <svg id="inset"></svg>
 </div>
 
-<div class="hint">点击省份 · 点亮足迹 &nbsp;·&nbsp; 再次点击可取消</div>
+<div class="hint">点选省份 · 镌刻足迹 &nbsp;·&nbsp; 再次点击可撤销</div>
 
 <div id="tooltip"><span class="dot"></span><span id="tooltip-name"></span><span class="st" id="tooltip-st"></span></div>
 
@@ -57,7 +57,7 @@
   </div>
 </div>
 
-<div id="toast"></div>
+<div id="toast" role="status" aria-live="polite"></div>
 
 <script type="module" src="src/main.js"></script>
 </body>

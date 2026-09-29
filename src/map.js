@@ -25,6 +25,7 @@ export function applyThemeVars(themeName) {
     '--capsule-bg': t.capsuleBg, '--capsule-border': t.capsuleBorder,
     '--inset-border': t.insetBorder, '--dash-line': t.dashLine,
     '--tooltip-bg': t.tooltipBg,
+    '--danger-text': t.dangerText || (themeName === 'light' ? '#ffffff' : '#1a1005'),
   };
   for (const [k, v] of Object.entries(map)) root.style.setProperty(k, v);
   const [g0, g1] = LIT_GRADIENT[themeName] || LIT_GRADIENT.dark;
@@ -102,7 +103,7 @@ export function buildMainMap(svg, provinces, cbs, themeName = 'dark') {
     g.appendChild(vis);
 
     // 小行政区加自适应点击热区
-    if (SMALL_REGION_HIT[adcode]) {
+    if (SMALL_REGION_HIT[adcode] && smallCenters.has(adcode)) {
       const [cx, cy] = smallCenters.get(adcode);
       const r = hitRadii.get(adcode) || baseHitR;
       const hit = el('circle', {
@@ -128,8 +129,16 @@ export function buildMainMap(svg, provinces, cbs, themeName = 'dark') {
       if (e.key === 'Enter' || e.key === ' ' || e.code === 'Space') {
         e.preventDefault();
         e.stopPropagation();
-        const [cx, cy] = projection(geoCentroid(f));
-        const rect = g.getBoundingClientRect();
+        let cx = 0, cy = 0;
+        try {
+          const pt = projection(geoCentroid(f));
+          if (pt && !isNaN(pt[0]) && !isNaN(pt[1])) {
+            [cx, cy] = pt;
+          }
+        } catch {
+          // 降级使用 0,0
+        }
+        const rect = g.getBoundingClientRect ? g.getBoundingClientRect() : { left: 0, top: 0, width: 0, height: 0 };
         const clientX = rect.left + rect.width / 2;
         const clientY = rect.top + rect.height / 2;
         cbs.onTap(f, cx, cy, clientX, clientY);

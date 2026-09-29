@@ -85,7 +85,10 @@ function hideTooltip() {
 }
 
 const popover = $('popover');
+let lastFocusedEl = null;
+
 function showPopover(name, x, y) {
+  lastFocusedEl = document.activeElement;
   $('popover-name').textContent = name;
   const popoverWidth = popover.offsetWidth || 180;
   const pad = Math.floor(popoverWidth / 2) + 12;
@@ -100,6 +103,14 @@ function showPopover(name, x, y) {
 function hidePopover() {
   popover.classList.remove('show');
   pendingUnlight = null;
+  if (lastFocusedEl && typeof lastFocusedEl.focus === 'function') {
+    try {
+      lastFocusedEl.focus();
+    } catch {
+      // 忽略聚焦异常
+    }
+    lastFocusedEl = null;
+  }
 }
 
 /* ---------- 地图交互 ---------- */

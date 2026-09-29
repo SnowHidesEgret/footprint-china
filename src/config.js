@@ -42,6 +42,7 @@ export const THEMES = {
     insetBorder: 'rgba(148, 163, 184, 0.38)',
     dashLine: '#94a3b8',
     tooltipBg: 'rgba(10, 15, 28, 0.94)',
+    dangerText: '#1a1005',
   },
   light: {
     name: '水墨素绢',
@@ -60,6 +61,7 @@ export const THEMES = {
     insetBorder: 'rgba(110, 85, 65, 0.48)',
     dashLine: '#6b5c4d',
     tooltipBg: 'rgba(247, 244, 236, 0.96)',
+    dangerText: '#ffffff',
   },
 };
 
