@@ -43,6 +43,7 @@ export const THEMES = {
     dashLine: '#94a3b8',
     tooltipBg: 'rgba(10, 15, 28, 0.94)',
     dangerText: '#1a1005',
+    particleColors: ['#FFB84D', '#FF8C38', '#FFE0B2', '#FFD27A'],
   },
   light: {
     name: '水墨素绢',
@@ -62,6 +63,7 @@ export const THEMES = {
     dashLine: '#6b5c4d',
     tooltipBg: 'rgba(247, 244, 236, 0.96)',
     dangerText: '#ffffff',
+    particleColors: ['#d98a2b', '#c47b26', '#e8a94e', '#b86a1e'],
   },
 };
 

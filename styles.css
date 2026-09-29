@@ -44,6 +44,16 @@ html, body {
   opacity: .55;
 }
 
+/* 粒子特效层（覆盖于地图之上，低于 popover / toast / tooltip） */
+#fx {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 20;
+}
+
 #map-wrap {
   position: fixed;
   inset: 0;
@@ -250,6 +260,22 @@ html, body {
   height: 20px;
 }
 
+/* 静音开关按钮（与主题按钮并排） */
+#sound-btn {
+  right: calc(max(22px, calc(16px + env(safe-area-inset-right))) + 50px);
+}
+
+#sound-btn #icon-vol {
+  filter: drop-shadow(0 0 6px rgba(255, 184, 77, 0.8));
+  color: var(--lit-stroke);
+}
+
+#sound-btn.muted #icon-mute,
+#sound-btn #icon-mute {
+  color: var(--text-dim);
+  opacity: 0.55;
+}
+
 /* 底部交互提示 */
 .hint {
   position: fixed;
@@ -447,6 +473,59 @@ html, body {
   color: var(--lit-stroke);
 }
 
+/* 连击徽记 */
+#combo {
+  position: fixed;
+  right: max(24px, 6vw);
+  top: 42%;
+  z-index: 25;
+  pointer-events: none;
+  user-select: none;
+  padding: 8px 18px;
+  border-radius: 999px;
+  background: var(--capsule-bg);
+  border: 1.5px solid var(--lit-stroke);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.3), 0 0 16px var(--glow);
+  opacity: 0;
+  transform: scale(0.6);
+  transition: opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#combo.show {
+  opacity: 1;
+  animation: combo-pop 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes combo-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  70% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+#combo-text {
+  display: inline-block;
+  font-size: 20px;
+  font-weight: 800;
+  font-style: italic;
+  letter-spacing: 0.06em;
+  background: linear-gradient(135deg, #fff3d1 0%, var(--lit-stroke) 50%, #ff8c38 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 0 10px var(--glow));
+}
+
 /* 加载态 */
 #loading {
   position: fixed;
@@ -524,6 +603,20 @@ html, body {
     width: 38px;
     height: 38px;
   }
+  #sound-btn {
+    top: max(14px, calc(8px + env(safe-area-inset-top)));
+    right: calc(max(14px, calc(10px + env(safe-area-inset-right))) + 46px);
+    width: 38px;
+    height: 38px;
+  }
+  #combo {
+    right: max(12px, calc(8px + env(safe-area-inset-right)));
+    top: 38%;
+    padding: 6px 14px;
+  }
+  #combo-text {
+    font-size: 16px;
+  }
 }
 
 /* 移动端横屏适配 (max-height <= 520px 且横屏) */
@@ -567,6 +660,24 @@ html, body {
   .theme-btn svg {
     width: 17px;
     height: 17px;
+  }
+  #sound-btn {
+    top: max(10px, calc(6px + env(safe-area-inset-top)));
+    right: calc(max(16px, calc(12px + env(safe-area-inset-right))) + 42px);
+    width: 34px;
+    height: 34px;
+  }
+  #sound-btn svg {
+    width: 17px;
+    height: 17px;
+  }
+  #combo {
+    right: max(16px, calc(10px + env(safe-area-inset-right)));
+    top: 30%;
+    padding: 5px 12px;
+  }
+  #combo-text {
+    font-size: 15px;
   }
   .hint {
     display: none;

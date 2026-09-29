@@ -7,7 +7,7 @@
 <meta name="description" content="交互式中国地图足迹：点击你去过的省份，点亮属于你的山河版图。">
 <meta name="theme-color" content="#080c16">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗺️</text></svg>">
-<link rel="stylesheet" href="styles.css?v=20260929c">
+<link rel="stylesheet" href="styles.css?v=20260930a">
 <script type="importmap">
 { "imports": { "d3-geo": "https://esm.sh/d3-geo@3.1.1" } }
 </script>
@@ -20,6 +20,7 @@
 </div>
 
 <canvas class="stars" id="stars" aria-hidden="true"></canvas>
+<canvas id="fx" aria-hidden="true"></canvas>
 
 <div class="brand">
   <h1>点亮中国</h1>
@@ -31,6 +32,11 @@
   <span class="bar"><i id="lit-bar"></i></span>
   <span class="pct" id="lit-pct">0%</span>
 </div>
+
+<button class="theme-btn" id="sound-btn" aria-label="切换音效" aria-pressed="true">
+  <svg id="icon-vol" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15 9a4 4 0 0 1 0 6"/><path d="M18 6a8 8 0 0 1 0 12"/><path d="M21 3a12 12 0 0 1 0 18"/></svg>
+  <svg id="icon-mute" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="22" y1="9" x2="16" y2="15"/><line x1="16" y1="9" x2="22" y2="15"/></svg>
+</button>
 
 <button class="theme-btn" id="theme-btn" aria-label="切换主题">
   <svg id="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
@@ -57,8 +63,10 @@
   </div>
 </div>
 
+<div id="combo" aria-hidden="true"><span id="combo-text">Combo x2!</span></div>
+
 <div id="toast" role="status" aria-live="polite"></div>
 
-<script type="module" src="src/main.js?v=20260929c"></script>
+<script type="module" src="src/main.js?v=20260930a"></script>
 </body>
 </html>

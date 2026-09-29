@@ -2,8 +2,8 @@
  * 点亮中国 · 状态管理（单向 Store）
  * 状态 → 持久化 → 通知订阅者重渲染，保持单一数据源
  */
-import { TOTAL_PROVINCES } from './config.js?v=20260929c';
-import { storage } from './geo.js?v=20260929c';
+import { TOTAL_PROVINCES } from './config.js?v=20260930a';
+import { storage } from './geo.js?v=20260930a';
 
 const VALID_THEMES = ['dark', 'light'];
 
@@ -86,6 +86,13 @@ class Store {
 
   toggleTheme() {
     this.setTheme(this.state.theme === 'dark' ? 'light' : 'dark');
+  }
+
+  setSoundEnabled(v) {
+    if (typeof v !== 'boolean') return;
+    if (this.state.soundEnabled === v) return;
+    this.state.soundEnabled = v;
+    this._commit();
   }
 }
 
