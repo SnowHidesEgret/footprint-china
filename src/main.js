@@ -1,12 +1,20 @@
 /**
  * 点亮中国 · 入口：组装地图 / 状态 / 视听反馈与交互
  */
-import { TOTAL_PROVINCES } from './config.js?v=20260930c';
-import { loadGeo, loadCityGeo } from './geo.js?v=20260930c';
-import { store } from './store.js?v=20260930c';
-import { buildMainMap, buildInset, applyThemeVars } from './map.js?v=20260930c';
-import { ensureCtx, setEnabled as setAudioEnabled, playLight, playUnlight, playAchievement } from './audio.js?v=20260930c';
-import { initParticles, burst as burstParticles, confetti as confettiParticles, setParticlesTheme, resizeParticles } from './particles.js?v=20260930c';
+import { TOTAL_PROVINCES } from './config.js?v=20260930d';
+import { loadGeo, loadCityGeo, isCityGeoLoaded, getLoadedCityGeo } from './geo.js?v=20260930d';
+import { store } from './store.js?v=20260930d';
+import { buildMainMap, buildInset, applyThemeVars } from './map.js?v=20260930d';
+import { ensureCtx, setEnabled as setAudioEnabled, playLight, playUnlight, playAchievement } from './audio.js?v=20260930d';
+import { initParticles, burst as burstParticles, confetti as confettiParticles, setParticlesTheme, resizeParticles } from './particles.js?v=20260930d';
+import {
+  TITLES,
+  ACHIEVEMENTS,
+  getTitleByCount,
+  initProvinceAdcodes,
+  getAdcode,
+  checkAchievements,
+} from './achievements.js?v=20260930d';
 
 const $ = (id) => document.getElementById(id);
 const isTouch = matchMedia('(pointer: coarse)').matches;
@@ -16,6 +24,14 @@ let provinces = [];
 let islandsFeature = null;
 let pendingUnlight = null; // { adcode, name, isCity, feature }
 let currentTheme = store.state.theme;
+
+// 成就解锁队列状态
+const unlockQueue = [];
+let isShowingUnlockModal = false;
+let unlockTriggerEl = null;
+
+// 成就墙焦点记忆
+let galleryPrevFocus = null;
 
 // 下钻层级状态
 let currentDrill = null; // { feature, cities, adcode, name }
@@ -28,6 +44,17 @@ let combo = 0;
 let comboTimer = null;
 const firedThresholds = new Set();
 const THRESHOLDS = [0.1, 0.25, 0.5, 0.75, 1.0];
+
+// 成就判定辅助器
+const achievementHelper = {
+  isLit: (shortName) => {
+    const code = getAdcode(shortName);
+    return code ? store.isLit(code) : false;
+  },
+  isCityGeoLoaded,
+  getCityGeo: getLoadedCityGeo,
+  getAdcode,
+};
 
 /* ---------- 星尘背景（一次性绘制，零运行时开销） ---------- */
 function drawStars() {
@@ -50,7 +77,20 @@ function drawStars() {
   }
 }
 
-/* ---------- 进度胶囊 ---------- */
+/* ---------- 称号徽章与进度胶囊 ---------- */
+function renderTitleBadge() {
+  const currentTitle = getTitleByCount(store.litCount());
+  const titleEl = $('current-title');
+  if (!titleEl) return;
+  if (currentTitle) {
+    titleEl.textContent = currentTitle.name;
+    titleEl.style.display = 'inline-flex';
+  } else {
+    titleEl.textContent = '';
+    titleEl.style.display = 'none';
+  }
+}
+
 function renderProgress(animate = true) {
   const n = Math.min(Math.max(store.litCount(), 0), TOTAL_PROVINCES);
   const pct = Math.min(Math.max((n / TOTAL_PROVINCES) * 100, 0), 100);
@@ -60,6 +100,7 @@ function renderProgress(animate = true) {
   if (!animate) bar.style.transition = 'none';
   bar.style.width = pct + '%';
   if (!animate) requestAnimationFrame(() => (bar.style.transition = ''));
+  renderTitleBadge();
 }
 
 /* 数字滚动小动画（点亮时的满足感） */
@@ -264,6 +305,8 @@ function onTap(f, svgX, svgY, clientX, clientY) {
     hidePopover();
     const litBefore = store.litCount();
     const pctBefore = litBefore / TOTAL_PROVINCES;
+    const titleBefore = getTitleByCount(litBefore);
+    const titleBeforeLevel = titleBefore ? titleBefore.level : 0;
 
     const litSuccess = store.light(adcode, name);
     if (!litSuccess) return;
@@ -271,14 +314,28 @@ function onTap(f, svgX, svgY, clientX, clientY) {
     triggerComboAndLightEffects(clientX, clientY, svgX, svgY, name);
     mapApi.update((c) => store.isLit(c), (c) => store.isCityLit(c));
 
-    // 里程碑阈值礼花判定
+    // 检查十二特色成就（只在"点亮"操作后检查），返回本轮新解锁；
+    // 解锁弹窗会播成就音效，本轮其他庆祝不再叠播
+    const newAch = handleAchievementChecks();
+    const unlockSoundPlayed = newAch.length > 0;
+
+    // 称号升级判定：升级时 toast 庆祝
     const litAfter = store.litCount();
     const pctAfter = litAfter / TOTAL_PROVINCES;
+    const titleAfter = getTitleByCount(litAfter);
+    const titleAfterLevel = titleAfter ? titleAfter.level : 0;
+    if (titleAfterLevel > titleBeforeLevel && titleAfter) {
+      store.bumpMaxTitleLevel(titleAfterLevel);
+      toast(`🎉 荣膺称号：<b>${titleAfter.name}</b>`);
+      if (!unlockSoundPlayed) playAchievement();
+    }
+
+    // 里程碑阈值礼花判定
     for (const t of THRESHOLDS) {
       if (pctBefore < t && pctAfter >= t && !firedThresholds.has(t)) {
         firedThresholds.add(t);
         confettiParticles(store.state.theme);
-        playAchievement();
+        if (!unlockSoundPlayed) playAchievement();
         toast('点亮进度 ' + Math.round(t * 100) + '%！');
       }
     }
@@ -327,7 +384,198 @@ function onCityTap(cf, svgX, svgY, clientX, clientY) {
         toast(`${currentDrill?.name || ''}点亮进度 ${Math.round(t * 100)}%！`);
       }
     }
+
+    // 检查十二特色成就（如 northland 北国风光所有地级市全点亮）
+    handleAchievementChecks();
   }
+}
+
+/* ---------- 成就解锁弹窗队列 ---------- */
+function queueAchievementUnlock(ach) {
+  if (!unlockTriggerEl) {
+    unlockTriggerEl = document.activeElement;
+  }
+  unlockQueue.push(ach);
+  if (!isShowingUnlockModal) {
+    showNextUnlockModal();
+  }
+}
+
+function showNextUnlockModal() {
+  if (unlockQueue.length === 0) {
+    isShowingUnlockModal = false;
+    if (unlockTriggerEl && typeof unlockTriggerEl.focus === 'function') {
+      try {
+        unlockTriggerEl.focus();
+      } catch {}
+      unlockTriggerEl = null;
+    }
+    return;
+  }
+
+  isShowingUnlockModal = true;
+  const ach = unlockQueue.shift();
+
+  // 播放成就音效与全屏礼花
+  playAchievement();
+  confettiParticles(store.state.theme);
+
+  $('unlock-icon').textContent = ach.icon;
+  $('unlock-title').textContent = ach.name;
+  $('unlock-copy').textContent = ach.copy;
+
+  const modal = $('unlock-modal');
+  modal.style.display = 'flex';
+  void modal.offsetWidth;
+  modal.classList.add('show');
+
+  const okBtn = $('unlock-ok');
+  if (okBtn) okBtn.focus();
+}
+
+function closeUnlockModal() {
+  const modal = $('unlock-modal');
+  if (!modal.classList.contains('show')) return;
+  modal.classList.remove('show');
+  setTimeout(() => {
+    modal.style.display = 'none';
+    showNextUnlockModal();
+  }, 220);
+}
+
+/* ---------- 成就陈列室浮层 ---------- */
+function renderGallery() {
+  const litCount = store.litCount();
+  const currentTitle = getTitleByCount(litCount);
+  const maxTitle = TITLES.find((t) => t.level === store.getMaxTitleLevel()) || null;
+  const unlockedCount = store.state.unlockedAchievements.length;
+
+  $('gallery-stats').innerHTML = `已解锁 <b>${unlockedCount}</b> / 12 个成就 · 当前称号：<b>${currentTitle ? currentTitle.name : '尚未启程'}</b>${maxTitle && (!currentTitle || maxTitle.level > currentTitle.level) ? ` · 历史最高：<b>${maxTitle.name}</b>` : ''}`;
+
+  // 1. 渲染八级称号进度列表
+  const titleListEl = $('gallery-title-list');
+  titleListEl.innerHTML = '';
+  for (const t of TITLES) {
+    const isUnlocked = litCount >= t.min;
+    const isCurrent = currentTitle && currentTitle.level === t.level;
+
+    const card = document.createElement('div');
+    card.className = `title-card ${isUnlocked ? 'unlocked' : 'locked'}`;
+    card.innerHTML = `
+      <div class="tc-head">
+        <span class="tc-lvl">Lv.${t.level}</span>
+        ${isCurrent ? '<span class="tc-tag">当前称号</span>' : (isUnlocked ? '<span class="tc-tag" style="background:transparent;color:var(--lit-stroke);border:1px solid var(--lit-stroke)">已达成</span>' : '')}
+      </div>
+      <div class="tc-name">${t.name}</div>
+      <div class="tc-desc">${isUnlocked ? t.desc : `需点亮 ${t.min} 个省份（当前 ${litCount}/${t.min}）`}</div>
+    `;
+    titleListEl.appendChild(card);
+  }
+
+  // 2. 渲染十二特色成就网格
+  const achieveGridEl = $('gallery-achieve-list');
+  achieveGridEl.innerHTML = '';
+  for (const ach of ACHIEVEMENTS) {
+    const isUnlocked = store.isAchievementUnlocked(ach.id);
+    const card = document.createElement('div');
+    card.className = `achieve-card ${isUnlocked ? 'unlocked' : 'locked'}`;
+
+    card.innerHTML = `
+      <div class="ac-icon">${ach.icon}</div>
+      <div class="ac-main">
+        <div class="ac-head">
+          <span class="ac-name">${ach.name}</span>
+          <span class="ac-status">${isUnlocked ? '已达成' : '未解锁'}</span>
+        </div>
+        <div class="ac-cond">解锁条件：${ach.conditionText}</div>
+        ${isUnlocked ? `<div class="ac-copy">“${ach.copy}”</div>` : ''}
+      </div>
+    `;
+    achieveGridEl.appendChild(card);
+  }
+}
+
+function openGallery() {
+  galleryPrevFocus = document.activeElement;
+  renderGallery();
+  const modal = $('gallery-modal');
+  modal.style.display = 'flex';
+  void modal.offsetWidth;
+  modal.classList.add('show');
+  const closeBtn = $('gallery-close');
+  if (closeBtn) closeBtn.focus();
+}
+
+function closeGallery() {
+  const modal = $('gallery-modal');
+  if (!modal.classList.contains('show')) return;
+  modal.classList.remove('show');
+  setTimeout(() => {
+    modal.style.display = 'none';
+    if (galleryPrevFocus && typeof galleryPrevFocus.focus === 'function') {
+      try {
+        galleryPrevFocus.focus();
+      } catch {}
+      galleryPrevFocus = null;
+    }
+  }, 220);
+}
+
+function handleAchievementChecks() {
+  const newlyUnlocked = checkAchievements(store, achievementHelper);
+  for (const ach of newlyUnlocked) {
+    queueAchievementUnlock(ach);
+  }
+  if ($('gallery-modal').classList.contains('show')) {
+    renderGallery();
+  }
+  return newlyUnlocked;
+}
+
+$('unlock-ok').addEventListener('click', (e) => {
+  e.stopPropagation();
+  closeUnlockModal();
+});
+
+$('unlock-close').addEventListener('click', (e) => {
+  e.stopPropagation();
+  closeUnlockModal();
+});
+
+$('unlock-modal').addEventListener('click', (e) => {
+  if (e.target === $('unlock-modal')) {
+    closeUnlockModal();
+  }
+});
+
+const unlockCard = document.querySelector('.unlock-card');
+if (unlockCard) {
+  unlockCard.addEventListener('click', (e) => {
+    e.stopPropagation();
+  });
+}
+
+$('achieve-btn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  openGallery();
+});
+
+$('gallery-close').addEventListener('click', (e) => {
+  e.stopPropagation();
+  closeGallery();
+});
+
+$('gallery-modal').addEventListener('click', (e) => {
+  if (e.target === $('gallery-modal')) {
+    closeGallery();
+  }
+});
+
+const gallerySheet = document.querySelector('.gallery-sheet');
+if (gallerySheet) {
+  gallerySheet.addEventListener('click', (e) => {
+    e.stopPropagation();
+  });
 }
 
 $('popover-drill').addEventListener('click', (e) => {
@@ -383,9 +631,17 @@ $('bc-root').addEventListener('click', (e) => {
   returnToNational();
 });
 
-// 支持按 Esc 键关闭 popover 或拉回全国视图
+// 支持按 Esc 键关闭弹窗或拉回全国视图
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' || e.key === 'Esc') {
+    if ($('unlock-modal').classList.contains('show')) {
+      closeUnlockModal();
+      return;
+    }
+    if ($('gallery-modal').classList.contains('show')) {
+      closeGallery();
+      return;
+    }
     if (popover.classList.contains('show')) {
       hidePopover();
       return;
@@ -478,6 +734,7 @@ async function init() {
     const geo = await loadGeo();
     provinces = geo.provinces;
     islandsFeature = geo.islands;
+    initProvinceAdcodes(provinces);
     if (provinces.length !== TOTAL_PROVINCES) {
       console.warn(`省份数量异常: ${provinces.length}`);
     }
@@ -495,6 +752,9 @@ async function init() {
     renderProgress();
     renderSoundBtn(s.soundEnabled);
     setAudioEnabled(s.soundEnabled);
+    if ($('gallery-modal').classList.contains('show')) {
+      renderGallery();
+    }
     if (s.theme !== currentTheme) {
       currentTheme = s.theme;
       applyThemeVars(s.theme);

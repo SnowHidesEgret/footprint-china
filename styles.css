@@ -58,6 +58,7 @@ html, body {
   position: fixed;
   inset: 0;
   touch-action: manipulation;
+  z-index: 1;
 }
 
 #map {
@@ -376,6 +377,21 @@ html, body {
   min-width: 44px;
 }
 
+.capsule-title-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  background: rgba(255, 215, 140, 0.14);
+  color: var(--lit-stroke);
+  border: 1px solid var(--capsule-border);
+  box-shadow: 0 0 8px var(--glow);
+  white-space: nowrap;
+}
+
 /* 主题切换按钮 */
 .theme-btn {
   position: fixed;
@@ -421,6 +437,24 @@ html, body {
 #sound-btn #icon-mute {
   color: var(--text-dim);
   opacity: 0.55;
+}
+
+/* 成就陈列室入口按钮（与主题/音效按钮同排、同风格） */
+#achieve-btn {
+  right: calc(max(22px, calc(16px + env(safe-area-inset-right))) + 100px);
+  width: auto;
+  min-width: 42px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: .04em;
+}
+
+#achieve-btn .achieve-btn-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 /* 底部交互提示 */
@@ -535,7 +569,7 @@ html, body {
 /* 熄灭确认气泡 */
 #popover {
   position: fixed;
-  z-index: 30;
+  z-index: 40;
   transform: translate(-50%, -115%) scale(.96);
   background: var(--tooltip-bg);
   border: 1px solid var(--capsule-border);
@@ -573,6 +607,9 @@ html, body {
   display: flex;
   gap: 10px;
   justify-content: center;
+  position: relative;
+  z-index: 2;
+  pointer-events: auto;
 }
 
 #popover button {
@@ -584,6 +621,9 @@ html, body {
   background: transparent;
   color: var(--text);
   letter-spacing: .06em;
+  position: relative;
+  z-index: 2;
+  pointer-events: auto;
   transition: transform .15s ease, background .15s ease, border-color .15s ease;
 }
 
@@ -738,6 +778,390 @@ html, body {
   font-family: "Songti SC", "STSong", "Noto Serif SC", serif;
 }
 
+/* 通用弹窗遮罩 */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.68);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.modal-backdrop.show {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.modal-close {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color .15s ease, background .15s ease;
+}
+
+.modal-close:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.modal-close:focus-visible {
+  outline: 2px solid var(--lit-stroke);
+}
+
+/* 成就解锁中央弹窗 */
+.unlock-card {
+  max-width: 400px;
+  width: 88%;
+  background: var(--tooltip-bg);
+  border: 1.5px solid var(--lit-stroke);
+  box-shadow: 0 16px 48px -8px rgba(0, 0, 0, 0.55), 0 0 28px var(--glow);
+  border-radius: 20px;
+  padding: 34px 26px 28px;
+  text-align: center;
+  position: relative;
+  transform: scale(0.88);
+  transition: transform .25s cubic-bezier(0.16, 1, 0.3, 1);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  user-select: none;
+}
+
+.modal-backdrop.show .unlock-card {
+  transform: scale(1);
+}
+
+.unlock-icon-wrap {
+  font-size: 54px;
+  line-height: 1;
+  margin-bottom: 12px;
+  filter: drop-shadow(0 0 16px var(--glow));
+}
+
+.unlock-badge-tag {
+  display: inline-block;
+  font-size: 11px;
+  letter-spacing: .16em;
+  font-weight: 700;
+  color: var(--lit-stroke);
+  text-transform: uppercase;
+  background: rgba(255, 215, 140, 0.14);
+  border: 1px solid var(--capsule-border);
+  padding: 2px 10px;
+  border-radius: 999px;
+  margin-bottom: 10px;
+}
+
+.unlock-title {
+  font-size: 21px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 12px;
+  letter-spacing: .04em;
+}
+
+.unlock-copy {
+  font-size: 13.5px;
+  color: var(--text-dim);
+  line-height: 1.6;
+  margin: 0 0 24px;
+  font-family: "Songti SC", "STSong", "Noto Serif SC", serif;
+}
+
+.unlock-btn {
+  background: linear-gradient(135deg, var(--lit-stroke), var(--glow));
+  color: var(--danger-text, #1a1005);
+  border: none;
+  border-radius: 999px;
+  padding: 10px 34px;
+  font-size: 14.5px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 4px 16px var(--glow);
+  letter-spacing: .04em;
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+
+.unlock-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px var(--glow);
+}
+
+.unlock-btn:focus-visible {
+  outline: 2px solid var(--lit-stroke);
+  outline-offset: 3px;
+}
+
+/* 成就陈列室浮层 */
+.gallery-sheet {
+  width: 780px;
+  max-width: 92vw;
+  height: 82vh;
+  max-height: 820px;
+  background: var(--tooltip-bg);
+  border: 1px solid var(--capsule-border);
+  border-radius: 20px;
+  box-shadow: 0 24px 64px -12px rgba(0, 0, 0, 0.55), 0 0 20px rgba(0, 0, 0, 0.2);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+  transform: scale(0.94);
+  transition: transform .25s cubic-bezier(0.16, 1, 0.3, 1);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+.modal-backdrop.show .gallery-sheet {
+  transform: scale(1);
+}
+
+.gallery-header {
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--capsule-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+
+.gallery-header-left {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.gallery-title {
+  font-size: 18.5px;
+  font-weight: 700;
+  margin: 0;
+  letter-spacing: .04em;
+  color: var(--text);
+}
+
+.gallery-stats {
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+
+.gallery-stats b {
+  color: var(--lit-stroke);
+}
+
+.gallery-body {
+  padding: 22px 24px;
+  overflow-y: auto;
+  flex: 1;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+}
+
+.gallery-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.section-title {
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: .06em;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 称号列表 */
+.title-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 10px;
+}
+
+.title-card {
+  border-radius: 12px;
+  padding: 12px 14px;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  transition: all .2s ease;
+  position: relative;
+}
+
+.title-card.locked {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  opacity: 0.52;
+  filter: grayscale(0.85);
+}
+
+.title-card.unlocked {
+  background: linear-gradient(145deg, rgba(255, 215, 140, 0.1), rgba(255, 140, 56, 0.05));
+  border: 1px solid var(--lit-stroke);
+  box-shadow: 0 0 12px var(--glow);
+}
+
+.title-card .tc-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.title-card .tc-lvl {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--lit-stroke);
+  letter-spacing: .04em;
+}
+
+.title-card.locked .tc-lvl {
+  color: var(--text-dim);
+}
+
+.title-card .tc-tag {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(255, 215, 140, 0.18);
+  color: var(--lit-stroke);
+  font-weight: 600;
+}
+
+.title-card .tc-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: .02em;
+}
+
+.title-card .tc-desc {
+  font-size: 11.5px;
+  color: var(--text-dim);
+  line-height: 1.35;
+}
+
+/* 成就网格 */
+.achieve-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 12px;
+}
+
+.achieve-card {
+  border-radius: 14px;
+  padding: 15px;
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  transition: all .2s ease;
+}
+
+.achieve-card.locked {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  opacity: 0.52;
+}
+
+.achieve-card.unlocked {
+  background: linear-gradient(145deg, rgba(255, 215, 140, 0.09), rgba(255, 140, 56, 0.04));
+  border: 1px solid var(--lit-stroke);
+  box-shadow: 0 0 16px var(--glow);
+}
+
+.achieve-card .ac-icon {
+  font-size: 34px;
+  line-height: 1;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.achieve-card.locked .ac-icon {
+  filter: grayscale(1) opacity(0.45);
+}
+
+.achieve-card.unlocked .ac-icon {
+  filter: drop-shadow(0 0 10px var(--glow));
+}
+
+.achieve-card .ac-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.achieve-card .ac-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.achieve-card .ac-name {
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.achieve-card.unlocked .ac-name {
+  color: var(--lit-stroke);
+}
+
+.achieve-card .ac-status {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 4px;
+}
+
+.achieve-card.unlocked .ac-status {
+  background: rgba(255, 215, 140, 0.18);
+  color: var(--lit-stroke);
+}
+
+.achieve-card.locked .ac-status {
+  background: rgba(148, 163, 184, 0.14);
+  color: var(--text-dim);
+}
+
+.achieve-card .ac-cond {
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.4;
+}
+
+.achieve-card .ac-copy {
+  font-size: 12.5px;
+  color: var(--text-dim);
+  line-height: 1.5;
+  font-family: "Songti SC", "STSong", "Noto Serif SC", serif;
+  margin-top: 3px;
+}
+
 /* 移动端竖屏适配 (<= 640px) */
 @media (max-width: 640px) {
   .brand {
@@ -788,6 +1212,16 @@ html, body {
     width: 38px;
     height: 38px;
   }
+  #achieve-btn {
+    top: max(14px, calc(8px + env(safe-area-inset-top)));
+    right: calc(max(14px, calc(10px + env(safe-area-inset-right))) + 92px);
+    width: auto;
+    min-width: 38px;
+    height: 38px;
+    padding: 0 9px;
+    border-radius: 999px;
+    font-size: 12px;
+  }
   #combo {
     right: max(12px, calc(8px + env(safe-area-inset-right)));
     top: 38%;
@@ -795,6 +1229,31 @@ html, body {
   }
   #combo-text {
     font-size: 16px;
+  }
+  .gallery-sheet {
+    width: 100vw;
+    height: 100vh;
+    max-height: 100vh;
+    border-radius: 0;
+    border: none;
+    top: 0;
+    left: 0;
+  }
+  .gallery-header {
+    padding-top: max(18px, calc(12px + env(safe-area-inset-top)));
+    padding-left: max(18px, calc(14px + env(safe-area-inset-left)));
+    padding-right: max(18px, calc(14px + env(safe-area-inset-right)));
+  }
+  .gallery-body {
+    padding-bottom: max(24px, calc(16px + env(safe-area-inset-bottom)));
+    padding-left: max(18px, calc(14px + env(safe-area-inset-left)));
+    padding-right: max(18px, calc(14px + env(safe-area-inset-right)));
+  }
+  .title-list {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .achieve-grid {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -856,6 +1315,15 @@ html, body {
     width: 17px;
     height: 17px;
   }
+  #achieve-btn {
+    top: max(10px, calc(6px + env(safe-area-inset-top)));
+    right: calc(max(16px, calc(12px + env(safe-area-inset-right))) + 84px);
+    width: auto;
+    min-width: 34px;
+    height: 34px;
+    padding: 0 8px;
+    font-size: 11px;
+  }
   #combo {
     right: max(16px, calc(10px + env(safe-area-inset-right)));
     top: 30%;
@@ -872,5 +1340,9 @@ html, body {
     height: 104px;
     right: max(12px, calc(8px + env(safe-area-inset-right)));
     bottom: max(12px, calc(8px + env(safe-area-inset-bottom)));
+  }
+  .gallery-sheet {
+    height: 94vh;
+    max-height: 94vh;
   }
 }

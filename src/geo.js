@@ -2,7 +2,7 @@
  * 点亮中国 · 地理数据层
  * 加载本地 GeoJSON，拆分为 34 个省级行政区 + 南海诸岛要素
  */
-import { STORE_KEY } from './config.js?v=20260930c';
+import { STORE_KEY } from './config.js?v=20260930d';
 
 const GEO_URL = 'maps/china.json';
 const ISLANDS_ADCODE = '100000_JD';
@@ -142,6 +142,26 @@ export async function loadCityGeo(provinceAdcode) {
 
   cityCache.set(code, cities);
   return cities;
+}
+
+/**
+ * 检查指定省份城市数据是否已加载到内存中
+ * @param {string|number} provinceAdcode
+ * @returns {boolean}
+ */
+export function isCityGeoLoaded(provinceAdcode) {
+  const code = String(provinceAdcode || '').trim();
+  return cityCache.has(code);
+}
+
+/**
+ * 获取已加载到内存中的城市要素数组，未加载则返回 null
+ * @param {string|number} provinceAdcode
+ * @returns {Array|null}
+ */
+export function getLoadedCityGeo(provinceAdcode) {
+  const code = String(provinceAdcode || '').trim();
+  return cityCache.get(code) || null;
 }
 
 /** localStorage 读写（带完整容错） */

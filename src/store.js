@@ -2,8 +2,9 @@
  * 点亮中国 · 状态管理（单向 Store）
  * 状态 → 持久化 → 通知订阅者重渲染，保持单一数据源
  */
-import { TOTAL_PROVINCES } from './config.js?v=20260930c';
-import { storage } from './geo.js?v=20260930c';
+import { TOTAL_PROVINCES } from './config.js?v=20260930d';
+import { storage } from './geo.js?v=20260930d';
+import { KNOWN_ACHIEVEMENTS } from './achievements.js?v=20260930d';
 
 const VALID_THEMES = ['dark', 'light'];
 
@@ -42,12 +43,35 @@ class Store {
       }
     }
 
+    // unlockedAchievements 防御性校验：只接受已知 12 个 id，去重
+    const rawUnlocked = Array.isArray(raw.unlockedAchievements)
+      ? raw.unlockedAchievements
+      : [];
+    const unlockedAchievements = [];
+    const seenAch = new Set();
+    for (const item of rawUnlocked) {
+      const id = typeof item === 'string' ? item.trim() : '';
+      if (KNOWN_ACHIEVEMENTS.includes(id) && !seenAch.has(id)) {
+        seenAch.add(id);
+        unlockedAchievements.push(id);
+      }
+    }
+
+    // maxTitleLevel 防御性校验：只接受 0~8 的整数
+    const rawMaxTitle = raw.maxTitleLevel;
+    const maxTitleLevel =
+      Number.isInteger(rawMaxTitle) && rawMaxTitle >= 0 && rawMaxTitle <= 8
+        ? rawMaxTitle
+        : 0;
+
     this.state = {
       version: 1,
       theme,
       provinces,
       cities,
       soundEnabled: Boolean(raw.soundEnabled ?? true),
+      unlockedAchievements,
+      maxTitleLevel,
     };
     this.listeners = new Set();
   }
@@ -147,6 +171,35 @@ class Store {
     if (this.state.soundEnabled === v) return;
     this.state.soundEnabled = v;
     this._commit();
+  }
+
+  isAchievementUnlocked(id) {
+    if (typeof id !== 'string') return false;
+    return this.state.unlockedAchievements.includes(id.trim());
+  }
+
+  unlockAchievement(id) {
+    if (typeof id !== 'string') return false;
+    const cleanId = id.trim();
+    if (!KNOWN_ACHIEVEMENTS.includes(cleanId)) return false;
+    if (this.state.unlockedAchievements.includes(cleanId)) return false;
+    this.state.unlockedAchievements.push(cleanId);
+    this._commit();
+    return true;
+  }
+
+  getMaxTitleLevel() {
+    return this.state.maxTitleLevel || 0;
+  }
+
+  bumpMaxTitleLevel(level) {
+    const lv = Number.isInteger(level) ? level : 0;
+    if (lv > (this.state.maxTitleLevel || 0)) {
+      this.state.maxTitleLevel = Math.min(lv, 8);
+      this._commit();
+      return true;
+    }
+    return false;
   }
 }
 
