@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>点亮中国 · 点亮你走过的每一寸山河</title>
+<meta name="description" content="交互式中国地图足迹：点击你去过的省份，点亮属于你的山河版图。">
+<meta name="theme-color" content="#0a0e1a">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗺️</text></svg>">
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+<link rel="stylesheet" href="styles.css">
+<script type="importmap">
+{ "imports": { "d3-geo": "https://esm.sh/d3-geo@3.1.1" } }
+</script>
+</head>
+<body>
+
+<div id="loading">
+  <div class="ring"></div>
+  <p>山河展开中</p>
+</div>
+
+<canvas class="stars" id="stars" aria-hidden="true"></canvas>
+
+<div class="brand">
+  <h1>点亮中国</h1>
+  <p>点亮你走过的每一寸山河</p>
+</div>
+
+<div class="progress-capsule" id="capsule" aria-live="polite">
+  <span class="count"><b id="lit-num">0</b><span style="color:var(--text-dim)"> / 34</span></span>
+  <span class="bar"><i id="lit-bar"></i></span>
+  <span class="pct" id="lit-pct">0%</span>
+</div>
+
+<button class="theme-btn" id="theme-btn" aria-label="切换主题">
+  <svg id="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+  <svg id="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+</button>
+
+<div id="map-wrap">
+  <svg id="map" role="img" aria-label="中国地图，点击省份点亮足迹"></svg>
+</div>
+
+<div id="inset-wrap" aria-hidden="true">
+  <svg id="inset"></svg>
+</div>
+
+<div class="hint">点击省份 · 点亮足迹 &nbsp;·&nbsp; 再次点击可取消</div>
+
+<div id="tooltip"><span class="dot"></span><span id="tooltip-name"></span><span class="st" id="tooltip-st"></span></div>
+
+<div id="popover">
+  <div class="q">熄灭 <b id="popover-name"></b> 的光芒？</div>
+  <div class="row">
+    <button id="popover-cancel">保留</button>
+    <button class="danger" id="popover-ok">熄灭</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
