@@ -1,8 +1,8 @@
 /* 点亮中国 · 样式（主题色由 JS 写入 CSS 变量） */
 
 :root {
-  --bg0: #0a0e1a; --bg1: #0d1424;
-  --prov-fill: rgba(255,255,255,0.035); --prov-stroke: rgba(148,163,184,0.28);
+  --bg0: #080c16; --bg1: #0e1626;
+  --prov-fill: rgba(255,255,255,0.032); --prov-stroke: rgba(148,163,184,0.40);
   --prov-hover-fill: rgba(255,255,255,0.09); --prov-hover-stroke: rgba(255,224,178,0.75);
   --lit-stroke: #FFE0B2; --glow: rgba(255,140,56,0.55);
   --text: #f1f5f9; --text-dim: #94a3b8;

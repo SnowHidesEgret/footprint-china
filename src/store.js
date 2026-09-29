@@ -2,21 +2,40 @@
  * 点亮中国 · 状态管理（单向 Store）
  * 状态 → 持久化 → 通知订阅者重渲染，保持单一数据源
  */
-import { STORE_KEY } from './config.js';
+import { TOTAL_PROVINCES } from './config.js';
 import { storage } from './geo.js';
 
-function defaultState() {
-  return {
-    version: 1,
-    theme: 'dark',
-    provinces: {},          // adcode -> { name, litAt }
-    soundEnabled: true,     // Phase 2 音效预留字段
-  };
-}
+const VALID_THEMES = ['dark', 'light'];
 
 class Store {
   constructor() {
-    this.state = Object.assign(defaultState(), storage.read() || {});
+    const raw = storage.read() || {};
+    // theme 枚举校验，非法值回退默认
+    const theme = VALID_THEMES.includes(raw.theme) ? raw.theme : 'dark';
+
+    // provinces 防御性校验，过滤脏数据并限制 34 个上限
+    const rawProvinces = (raw.provinces && typeof raw.provinces === 'object' && !Array.isArray(raw.provinces))
+      ? raw.provinces
+      : {};
+    const provinces = {};
+    let count = 0;
+    for (const [code, val] of Object.entries(rawProvinces)) {
+      if (count >= TOTAL_PROVINCES) break;
+      if (val && typeof val === 'object' && val.name) {
+        provinces[String(code)] = {
+          name: String(val.name),
+          litAt: typeof val.litAt === 'number' ? val.litAt : Date.now(),
+        };
+        count++;
+      }
+    }
+
+    this.state = {
+      version: 1,
+      theme,
+      provinces,
+      soundEnabled: Boolean(raw.soundEnabled ?? true),
+    };
     this.listeners = new Set();
   }
 
@@ -37,12 +56,14 @@ class Store {
   }
 
   litCount() {
-    return Object.keys(this.state.provinces).length;
+    return Math.min(Object.keys(this.state.provinces).length, TOTAL_PROVINCES);
   }
 
   light(adcode, name) {
     adcode = String(adcode);
     if (this.isLit(adcode)) return false;
+    // 34 上限防御，防脏数据与越界
+    if (this.litCount() >= TOTAL_PROVINCES) return false;
     this.state.provinces[adcode] = { name, litAt: Date.now() };
     this._commit();
     return true;
@@ -57,7 +78,7 @@ class Store {
   }
 
   setTheme(theme) {
-    if (theme !== 'dark' && theme !== 'light') return;
+    if (!VALID_THEMES.includes(theme)) return;
     if (this.state.theme === theme) return;
     this.state.theme = theme;
     this._commit();

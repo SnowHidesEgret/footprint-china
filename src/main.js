@@ -13,6 +13,7 @@ let mapApi = null;
 let provinces = [];
 let islandsFeature = null;
 let pendingUnlight = null; // { adcode, name }
+let currentTheme = store.state.theme;
 
 /* ---------- 星尘背景（一次性绘制，零运行时开销） ---------- */
 function drawStars() {
@@ -37,8 +38,8 @@ function drawStars() {
 
 /* ---------- 进度胶囊 ---------- */
 function renderProgress(animate = true) {
-  const n = store.litCount();
-  const pct = (n / TOTAL_PROVINCES) * 100;
+  const n = Math.min(Math.max(store.litCount(), 0), TOTAL_PROVINCES);
+  const pct = Math.min(Math.max((n / TOTAL_PROVINCES) * 100, 0), 100);
   $('lit-num').textContent = n;
   $('lit-pct').textContent = pct.toFixed(1).replace(/\.0$/, '') + '%';
   const bar = $('lit-bar');
@@ -51,7 +52,7 @@ function renderProgress(animate = true) {
 function popNumber() {
   const el = $('lit-num');
   el.style.transform = 'scale(1.35)';
-  el.style.transition = 'transform .18s ease';
+  el.style.transition = 'transform .18s cubic-bezier(0.16, 1, 0.3, 1)';
   requestAnimationFrame(() =>
     requestAnimationFrame(() => {
       el.style.transform = 'scale(1)';
@@ -86,9 +87,15 @@ function hideTooltip() {
 const popover = $('popover');
 function showPopover(name, x, y) {
   $('popover-name').textContent = name;
-  popover.style.left = Math.min(Math.max(x, 110), innerWidth - 110) + 'px';
-  popover.style.top = Math.max(y, 130) + 'px';
+  const popoverWidth = popover.offsetWidth || 180;
+  const pad = Math.floor(popoverWidth / 2) + 12;
+  const clampedX = Math.min(Math.max(x, pad), window.innerWidth - pad);
+  const clampedY = Math.min(Math.max(y, 110), window.innerHeight - 80);
+  popover.style.left = clampedX + 'px';
+  popover.style.top = clampedY + 'px';
   popover.classList.add('show');
+  const cancelBtn = $('popover-cancel');
+  if (cancelBtn) cancelBtn.focus();
 }
 function hidePopover() {
   popover.classList.remove('show');
@@ -96,25 +103,26 @@ function hidePopover() {
 }
 
 /* ---------- 地图交互 ---------- */
-function onTap(f, x, y) {
+function onTap(f, svgX, svgY, clientX, clientY) {
   const adcode = String(f.properties.adcode);
   const name = f.properties.name;
   hideTooltip();
   if (store.isLit(adcode)) {
-    // 已点亮 → 确认气泡（防误触）
+    // 已点亮 → 确认气泡（防误触，使用视口坐标精确定位）
     pendingUnlight = { adcode, name };
-    const r = $('map-wrap').getBoundingClientRect();
-    showPopover(name, x + r.left, y + r.top);
+    showPopover(name, clientX, clientY);
   } else {
+    hidePopover();
     store.light(adcode, name);
     mapApi.update((c) => store.isLit(c));
-    mapApi.burst(x, y);
+    mapApi.burst(svgX, svgY);
     popNumber();
     if (isTouch) toast(`✦ 已点亮 <b>${name}</b>`);
   }
 }
 
-$('popover-ok').addEventListener('click', () => {
+$('popover-ok').addEventListener('click', (e) => {
+  e.stopPropagation();
   if (pendingUnlight) {
     store.unlight(pendingUnlight.adcode);
     mapApi.update((c) => store.isLit(c));
@@ -122,9 +130,27 @@ $('popover-ok').addEventListener('click', () => {
   }
   hidePopover();
 });
-$('popover-cancel').addEventListener('click', hidePopover);
+
+$('popover-cancel').addEventListener('click', (e) => {
+  e.stopPropagation();
+  hidePopover();
+});
+
+popover.addEventListener('click', (e) => {
+  e.stopPropagation();
+});
+
 document.addEventListener('click', (e) => {
-  if (popover.classList.contains('show') && !popover.contains(e.target)) hidePopover();
+  if (popover.classList.contains('show') && !popover.contains(e.target)) {
+    hidePopover();
+  }
+});
+
+// 支持按 Esc 键关闭 popover
+document.addEventListener('keydown', (e) => {
+  if ((e.key === 'Escape' || e.key === 'Esc') && popover.classList.contains('show')) {
+    hidePopover();
+  }
 });
 
 /* ---------- 主题 ---------- */
@@ -132,7 +158,7 @@ function renderThemeIcon() {
   const dark = store.state.theme === 'dark';
   $('icon-moon').style.display = dark ? '' : 'none';
   $('icon-sun').style.display = dark ? 'none' : '';
-  document.querySelector('meta[name="theme-color"]').content = dark ? '#0a0e1a' : '#faf7f0';
+  document.querySelector('meta[name="theme-color"]').content = dark ? '#080c16' : '#f7f4ec';
 }
 $('theme-btn').addEventListener('click', () => {
   store.toggleTheme();
@@ -150,7 +176,7 @@ function buildAll() {
     },
     onLeave: hideTooltip,
     onTap,
-  });
+  }, store.state.theme);
   mapApi.update((c) => store.isLit(c));
   buildInset($('inset'), islandsFeature, store.state.theme);
   renderProgress(false);
@@ -172,14 +198,17 @@ async function init() {
 
   buildAll();
 
-  // 状态变化 → 刷新点亮态 + 进度 + 主题
+  // 状态变化：普通点亮只更新点亮类名与进度，避免每次销毁重建静态插图
   store.subscribe((s) => {
     if (mapApi) mapApi.update((c) => store.isLit(c));
     renderProgress();
-    applyThemeVars(s.theme);
-    renderThemeIcon();
-    drawStars();
-    buildInset($('inset'), islandsFeature, s.theme);
+    if (s.theme !== currentTheme) {
+      currentTheme = s.theme;
+      applyThemeVars(s.theme);
+      renderThemeIcon();
+      drawStars();
+      buildInset($('inset'), islandsFeature, s.theme);
+    }
   });
 
   // 尺寸变化 → 重建投影（防抖）
@@ -194,7 +223,7 @@ async function init() {
         },
         onLeave: hideTooltip,
         onTap,
-      });
+      }, store.state.theme);
       mapApi.update((c) => store.isLit(c));
       buildInset($('inset'), islandsFeature, store.state.theme);
       drawStars();

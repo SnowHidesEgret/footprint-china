@@ -1,6 +1,6 @@
 /**
  * 点亮中国 · 全局配置
- * 所有色值、常量集中于此（对应 DESIGN.md Phase 0 准出要求：色值固化到配置文件）
+ * 所有色值、常量集中于此（新中式墨色/宣纸/朱砂/鎏金配色）
  */
 
 export const STORE_KEY = 'footprint_china_v1_store';
@@ -27,44 +27,44 @@ export const HIT_CIRCLE_R = 22;
 export const THEMES = {
   dark: {
     name: '暗夜曜石',
-    bg0: '#0a0e1a',
-    bg1: '#0d1424',
-    provinceFill: 'rgba(255,255,255,0.035)',
-    provinceStroke: 'rgba(148,163,184,0.28)',
-    provinceHoverFill: 'rgba(255,255,255,0.09)',
-    provinceHoverStroke: 'rgba(255,224,178,0.75)',
-    litStroke: '#FFE0B2',
-    glow: 'rgba(255,140,56,0.55)',
+    bg0: '#080c16',
+    bg1: '#0e1626',
+    provinceFill: 'rgba(255, 255, 255, 0.032)',
+    provinceStroke: 'rgba(148, 163, 184, 0.40)',
+    provinceHoverFill: 'rgba(255, 215, 140, 0.08)',
+    provinceHoverStroke: 'rgba(255, 224, 160, 0.78)',
+    litStroke: '#FFE4B5',
+    glow: 'rgba(255, 145, 50, 0.52)',
     text: '#f1f5f9',
     textDim: '#94a3b8',
-    capsuleBg: 'rgba(13,20,36,0.72)',
-    capsuleBorder: 'rgba(148,163,184,0.22)',
-    insetBorder: 'rgba(148,163,184,0.45)',
-    dashLine: '#cbd5e1',
-    tooltipBg: 'rgba(10,14,26,0.92)',
+    capsuleBg: 'rgba(12, 18, 32, 0.78)',
+    capsuleBorder: 'rgba(255, 215, 140, 0.16)',
+    insetBorder: 'rgba(148, 163, 184, 0.38)',
+    dashLine: '#94a3b8',
+    tooltipBg: 'rgba(10, 15, 28, 0.94)',
   },
   light: {
     name: '水墨素绢',
-    bg0: '#faf7f0',
-    bg1: '#f3ecdf',
-    provinceFill: 'rgba(120,80,40,0.06)',
-    provinceStroke: 'rgba(120,90,60,0.35)',
-    provinceHoverFill: 'rgba(200,60,40,0.12)',
-    provinceHoverStroke: 'rgba(180,50,35,0.8)',
-    litStroke: '#a32e22',
-    glow: 'rgba(200,60,40,0.35)',
-    text: '#2b2118',
-    textDim: '#8a7a66',
-    capsuleBg: 'rgba(250,247,240,0.8)',
-    capsuleBorder: 'rgba(120,90,60,0.25)',
-    insetBorder: 'rgba(90,70,50,0.55)',
-    dashLine: '#57534e',
-    tooltipBg: 'rgba(43,33,24,0.92)',
+    bg0: '#f7f4ec',
+    bg1: '#ebe4d3',
+    provinceFill: 'rgba(80, 60, 45, 0.045)',
+    provinceStroke: 'rgba(110, 90, 70, 0.46)',
+    provinceHoverFill: 'rgba(190, 55, 38, 0.08)',
+    provinceHoverStroke: 'rgba(185, 45, 30, 0.78)',
+    litStroke: '#a3281b',
+    glow: 'rgba(195, 55, 38, 0.32)',
+    text: '#241a12',
+    textDim: '#786856',
+    capsuleBg: 'rgba(247, 244, 236, 0.86)',
+    capsuleBorder: 'rgba(130, 100, 75, 0.22)',
+    insetBorder: 'rgba(110, 85, 65, 0.48)',
+    dashLine: '#6b5c4d',
+    tooltipBg: 'rgba(247, 244, 236, 0.96)',
   },
 };
 
-/** 点亮渐变（深色模式：落日金；浅色模式：朱砂红） */
+/** 点亮渐变（深色模式：鎏金落霞；浅色模式：朱砂印泥） */
 export const LIT_GRADIENT = {
-  dark: ['#FFA959', '#FF8C38'],
-  light: ['#e0604a', '#c23a28'],
+  dark: ['#FFB066', '#FF822E'],
+  light: ['#e0543e', '#b82b1c'],
 };

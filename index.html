@@ -2,12 +2,11 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>点亮中国 · 点亮你走过的每一寸山河</title>
 <meta name="description" content="交互式中国地图足迹：点击你去过的省份，点亮属于你的山河版图。">
-<meta name="theme-color" content="#0a0e1a">
+<meta name="theme-color" content="#080c16">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗺️</text></svg>">
-<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
 <link rel="stylesheet" href="styles.css">
 <script type="importmap">
 { "imports": { "d3-geo": "https://esm.sh/d3-geo@3.1.1" } }
@@ -39,7 +38,7 @@
 </button>
 
 <div id="map-wrap">
-  <svg id="map" role="img" aria-label="中国地图，点击省份点亮足迹"></svg>
+  <svg id="map" aria-label="中国互动地图，可点击或使用键盘选择省份"></svg>
 </div>
 
 <div id="inset-wrap" aria-hidden="true">
@@ -50,11 +49,11 @@
 
 <div id="tooltip"><span class="dot"></span><span id="tooltip-name"></span><span class="st" id="tooltip-st"></span></div>
 
-<div id="popover">
+<div id="popover" role="dialog" aria-modal="true" aria-labelledby="popover-name">
   <div class="q">熄灭 <b id="popover-name"></b> 的光芒？</div>
   <div class="row">
-    <button id="popover-cancel">保留</button>
-    <button class="danger" id="popover-ok">熄灭</button>
+    <button id="popover-cancel" type="button">保留</button>
+    <button class="danger" id="popover-ok" type="button">熄灭</button>
   </div>
 </div>
 
