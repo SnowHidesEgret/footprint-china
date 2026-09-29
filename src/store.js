@@ -2,8 +2,8 @@
  * 点亮中国 · 状态管理（单向 Store）
  * 状态 → 持久化 → 通知订阅者重渲染，保持单一数据源
  */
-import { TOTAL_PROVINCES } from './config.js?v=20260930a';
-import { storage } from './geo.js?v=20260930a';
+import { TOTAL_PROVINCES } from './config.js?v=20260930b';
+import { storage } from './geo.js?v=20260930b';
 
 const VALID_THEMES = ['dark', 'light'];
 
@@ -30,10 +30,22 @@ class Store {
       }
     }
 
+    // cities 防御性校验，只接受字符串 adcode -> true
+    const rawCities = (raw.cities && typeof raw.cities === 'object' && !Array.isArray(raw.cities))
+      ? raw.cities
+      : {};
+    const cities = {};
+    for (const [code, val] of Object.entries(rawCities)) {
+      if (val === true && typeof code === 'string' && code.trim()) {
+        cities[code.trim()] = true;
+      }
+    }
+
     this.state = {
       version: 1,
       theme,
       provinces,
+      cities,
       soundEnabled: Boolean(raw.soundEnabled ?? true),
     };
     this.listeners = new Set();
@@ -75,6 +87,47 @@ class Store {
     delete this.state.provinces[adcode];
     this._commit();
     return true;
+  }
+
+  isCityLit(adcode) {
+    if (adcode === undefined || adcode === null) return false;
+    const code = String(adcode).trim();
+    if (!code) return false;
+    return Boolean(this.state.cities[code]);
+  }
+
+  lightCity(adcode) {
+    if (typeof adcode !== 'string' && typeof adcode !== 'number') return false;
+    const code = String(adcode).trim();
+    if (!code) return false;
+    if (this.state.cities[code] === true) return false;
+    this.state.cities[code] = true;
+    this._commit();
+    return true;
+  }
+
+  unlightCity(adcode) {
+    if (typeof adcode !== 'string' && typeof adcode !== 'number') return false;
+    const code = String(adcode).trim();
+    if (!code || !this.state.cities[code]) return false;
+    delete this.state.cities[code];
+    this._commit();
+    return true;
+  }
+
+  cityLitCount(provinceAdcode) {
+    if (!provinceAdcode) {
+      return Object.keys(this.state.cities).length;
+    }
+    const prefix = String(provinceAdcode).trim().slice(0, 2);
+    if (!prefix) return 0;
+    let count = 0;
+    for (const code of Object.keys(this.state.cities)) {
+      if (code.startsWith(prefix)) {
+        count++;
+      }
+    }
+    return count;
   }
 
   setTheme(theme) {

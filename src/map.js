@@ -2,8 +2,8 @@
  * 点亮中国 · 地图渲染层（原生 SVG + d3-geo）
  * 主地图：34 省 path；右下角：南海诸岛插图（真实岛礁数据 + 十段线示意）
  */
-import { geoMercator, geoPath, geoCentroid } from 'd3-geo';
-import { THEMES, LIT_GRADIENT, TEN_DASH_LINE, SMALL_REGION_HIT, HIT_CIRCLE_R } from './config.js?v=20260930a';
+import { geoMercator, geoPath, geoCentroid, geoBounds } from 'd3-geo';
+import { THEMES, LIT_GRADIENT, TEN_DASH_LINE, SMALL_REGION_HIT, HIT_CIRCLE_R } from './config.js?v=20260930b';
 
 const NS = 'http://www.w3.org/2000/svg';
 const el = (tag, attrs = {}) => {
@@ -36,16 +36,27 @@ export function applyThemeVars(themeName) {
 }
 
 /**
+ * 缓动函数：easeOutCubic (阻尼平滑减速)
+ */
+function easeOutCubic(t) {
+  return 1 - Math.pow(1 - t, 3);
+}
+
+/**
  * 构建主地图
  * @param {SVGSVGElement} svg
  * @param {Array} provinces GeoJSON features
- * @param {Object} cbs { onHover(f, evt), onLeave(), onTap(f, svgX, svgY, clientX, clientY) }
+ * @param {Object} cbs { onHover, onLeave, onTap, onDblClick, onDblTap, onCityHover, onCityLeave, onCityTap, onBackgroundClick }
  * @param {string} themeName 当前主题名
  */
 export function buildMainMap(svg, provinces, cbs, themeName = 'dark') {
   svg.innerHTML = '';
   const W = svg.clientWidth || window.innerWidth;
   const H = svg.clientHeight || window.innerHeight;
+
+  // 初始化 SVG viewBox
+  let currentViewBox = [0, 0, W, H];
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
 
   const defs = el('defs');
   const grad = el('radialGradient', { id: 'litGrad', cx: '50%', cy: '42%', r: '75%' });
@@ -86,6 +97,48 @@ export function buildMainMap(svg, provinces, cbs, themeName = 'dark') {
   const burstLayer = el('g', { class: 'burst-layer', 'pointer-events': 'none' });
   const groups = new Map();
 
+  let cityLayer = null;
+  const cityGroups = new Map();
+  let activeDrilledAdcode = null;
+  let viewBoxAnimId = null;
+
+  function setViewBox(box) {
+    currentViewBox = box.slice();
+    svg.setAttribute('viewBox', `${box[0]} ${box[1]} ${box[2]} ${box[3]}`);
+  }
+
+  function animateViewBox(targetBox, duration = 600, onComplete) {
+    if (viewBoxAnimId) {
+      cancelAnimationFrame(viewBoxAnimId);
+      viewBoxAnimId = null;
+    }
+    const startBox = currentViewBox.slice();
+    const startTime = performance.now();
+
+    function step(now) {
+      const elapsed = now - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      const t = easeOutCubic(progress);
+
+      const box = [
+        startBox[0] + (targetBox[0] - startBox[0]) * t,
+        startBox[1] + (targetBox[1] - startBox[1]) * t,
+        startBox[2] + (targetBox[2] - startBox[2]) * t,
+        startBox[3] + (targetBox[3] - startBox[3]) * t,
+      ];
+      setViewBox(box);
+
+      if (progress < 1) {
+        viewBoxAnimId = requestAnimationFrame(step);
+      } else {
+        viewBoxAnimId = null;
+        if (onComplete) onComplete();
+      }
+    }
+
+    viewBoxAnimId = requestAnimationFrame(step);
+  }
+
   for (const f of provinces) {
     const adcode = String(f.properties.adcode);
     const name = f.properties.name;
@@ -113,9 +166,28 @@ export function buildMainMap(svg, provinces, cbs, themeName = 'dark') {
       g.appendChild(hit);
     }
 
-    g.addEventListener('mouseenter', (e) => cbs.onHover(f, e));
-    g.addEventListener('mousemove', (e) => cbs.onHover(f, e));
-    g.addEventListener('mouseleave', () => cbs.onLeave());
+    g.addEventListener('mouseenter', (e) => cbs.onHover && cbs.onHover(f, e));
+    g.addEventListener('mousemove', (e) => cbs.onHover && cbs.onHover(f, e));
+    g.addEventListener('mouseleave', () => cbs.onLeave && cbs.onLeave());
+
+    // 移动端 300ms 双击下钻识别（通过 touchend 时间戳判断）
+    let lastTouchEndTime = 0;
+    g.addEventListener('touchend', (e) => {
+      const now = Date.now();
+      if (now - lastTouchEndTime <= 300) {
+        lastTouchEndTime = 0;
+        if (cbs.onDblTap) cbs.onDblTap(f, e);
+      } else {
+        lastTouchEndTime = now;
+      }
+    }, { passive: true });
+
+    // 桌面端 dblclick 事件
+    g.addEventListener('dblclick', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      if (cbs.onDblClick) cbs.onDblClick(f, e);
+    });
 
     // 点击事件：阻止冒泡，避免被 document 全局点击立即关闭 popover
     g.addEventListener('click', (e) => {
@@ -151,6 +223,11 @@ export function buildMainMap(svg, provinces, cbs, themeName = 'dark') {
   svg.appendChild(layer);
   svg.appendChild(burstLayer);
 
+  // 地图空白暗区点击
+  svg.addEventListener('click', (e) => {
+    if (cbs.onBackgroundClick) cbs.onBackgroundClick(e);
+  });
+
   function svgPoint(svgEl, evt) {
     if (!svgEl) return { x: 0, y: 0 };
     const clientX = typeof evt.clientX === 'number' ? evt.clientX : 0;
@@ -179,7 +256,7 @@ export function buildMainMap(svg, provinces, cbs, themeName = 'dark') {
 
   return {
     /** 按 store 状态刷新点亮 class 与无障碍状态 */
-    update(isLit) {
+    update(isLit, isCityLit) {
       for (const [adcode, g] of groups) {
         const lit = isLit(adcode);
         g.classList.toggle('lit', lit);
@@ -187,12 +264,159 @@ export function buildMainMap(svg, provinces, cbs, themeName = 'dark') {
         g.setAttribute('aria-label', `${name}，${lit ? '已点亮' : '未点亮'}`);
         g.setAttribute('aria-pressed', lit ? 'true' : 'false');
       }
+      if (cityLayer && isCityLit) {
+        for (const [cadcode, cg] of cityGroups) {
+          const lit = isCityLit(cadcode);
+          cg.classList.toggle('lit', lit);
+          const cname = cg.getAttribute('data-name') || '';
+          cg.setAttribute('aria-label', `${cname}，${lit ? '已点亮' : '未点亮'}`);
+          cg.setAttribute('aria-pressed', lit ? 'true' : 'false');
+        }
+      }
+    },
+    /** 单个城市状态更新 */
+    updateCity(adcode, lit) {
+      const cg = cityGroups.get(String(adcode));
+      if (cg) {
+        cg.classList.toggle('lit', lit);
+        const cname = cg.getAttribute('data-name') || '';
+        cg.setAttribute('aria-label', `${cname}，${lit ? '已点亮' : '未点亮'}`);
+        cg.setAttribute('aria-pressed', lit ? 'true' : 'false');
+      }
     },
     /** 点亮时的光晕爆发（一次性） */
     burst(x, y) {
       const c = el('circle', { cx: x, cy: y, r: 8, class: 'burst-ring' });
       burstLayer.appendChild(c);
       c.addEventListener('animationend', () => c.remove());
+    },
+    /** 下钻平滑聚焦到指定省份 */
+    drillDown(provinceFeature, cities, isCityLit) {
+      activeDrilledAdcode = String(provinceFeature.properties.adcode);
+
+      // 计算地理 bbox 并根据 SVG 宽高比等比居中留白
+      const [[minLng, minLat], [maxLng, maxLat]] = geoBounds(provinceFeature);
+      const p0 = projection([minLng, maxLat]);
+      const p1 = projection([maxLng, minLat]);
+      const bx0 = Math.min(p0[0], p1[0]);
+      const by0 = Math.min(p0[1], p1[1]);
+      const bx1 = Math.max(p0[0], p1[0]);
+      const by1 = Math.max(p0[1], p1[1]);
+      const cx = (bx0 + bx1) / 2;
+      const cy = (by0 + by1) / 2;
+
+      let bw = Math.max(bx1 - bx0, 20) * 1.35;
+      let bh = Math.max(by1 - by0, 20) * 1.35;
+      const aspect = W / H;
+      if (bw / bh > aspect) {
+        bh = bw / aspect;
+      } else {
+        bw = bh * aspect;
+      }
+      const targetBox = [cx - bw / 2, cy - bh / 2, bw, bh];
+
+      // 阻尼插值过渡 viewBox
+      animateViewBox(targetBox, 600);
+
+      // 背景省份隐入 0.2 透明度
+      layer.classList.add('drilled');
+      for (const [code, g] of groups) {
+        g.classList.toggle('active-drilled', code === activeDrilledAdcode);
+      }
+
+      // 渲染城市层
+      if (cityLayer) {
+        cityLayer.remove();
+        cityGroups.clear();
+      }
+      cityLayer = el('g', { class: 'city-layer' });
+      for (const cf of cities) {
+        const cadcode = String(cf.properties.adcode);
+        const cname = cf.properties.name;
+        const lit = isCityLit(cadcode);
+        const cg = el('g', {
+          class: `city ${lit ? 'lit' : ''}`,
+          role: 'button',
+          tabindex: '0',
+          'data-adcode': cadcode,
+          'data-name': cname,
+          'aria-label': `${cname}，${lit ? '已点亮' : '未点亮'}`,
+          'aria-pressed': lit ? 'true' : 'false',
+        });
+
+        const cvis = el('path', { d: path(cf), class: 'cvis' });
+        cg.appendChild(cvis);
+
+        cg.addEventListener('mouseenter', (e) => cbs.onCityHover && cbs.onCityHover(cf, e));
+        cg.addEventListener('mousemove', (e) => cbs.onCityHover && cbs.onCityHover(cf, e));
+        cg.addEventListener('mouseleave', () => cbs.onCityLeave && cbs.onCityLeave());
+
+        cg.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const pt = svgPoint(svg, e);
+          if (cbs.onCityTap) cbs.onCityTap(cf, pt.x, pt.y, e.clientX, e.clientY);
+        });
+
+        cg.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ' || e.code === 'Space') {
+            e.preventDefault();
+            e.stopPropagation();
+            let cx = 0, cy = 0;
+            try {
+              const pt = projection(geoCentroid(cf));
+              if (pt && !isNaN(pt[0]) && !isNaN(pt[1])) [cx, cy] = pt;
+            } catch {}
+            const rect = cg.getBoundingClientRect ? cg.getBoundingClientRect() : { left: 0, top: 0, width: 0, height: 0 };
+            const clientX = rect.left + rect.width / 2;
+            const clientY = rect.top + rect.height / 2;
+            if (cbs.onCityTap) cbs.onCityTap(cf, cx, cy, clientX, clientY);
+          }
+        });
+
+        cityLayer.appendChild(cg);
+        cityGroups.set(cadcode, cg);
+      }
+
+      svg.insertBefore(cityLayer, burstLayer);
+      requestAnimationFrame(() => {
+        if (cityLayer) cityLayer.classList.add('show');
+      });
+    },
+    /** 平滑拉回全国视图 */
+    returnToNational(targetProvinceAdcode, onComplete) {
+      animateViewBox([0, 0, W, H], 600, () => {
+        if (cityLayer) {
+          cityLayer.remove();
+          cityLayer = null;
+          cityGroups.clear();
+        }
+        if (targetProvinceAdcode && groups.has(targetProvinceAdcode)) {
+          try {
+            groups.get(targetProvinceAdcode).focus();
+          } catch {}
+        }
+        if (onComplete) onComplete();
+      });
+
+      layer.classList.remove('drilled');
+      for (const [, g] of groups) {
+        g.classList.remove('active-drilled');
+      }
+
+      if (cityLayer) {
+        cityLayer.classList.remove('show');
+      }
+      activeDrilledAdcode = null;
+    },
+    /** 聚焦省份节点（无障碍适配） */
+    focusProvince(adcode) {
+      const g = groups.get(String(adcode));
+      if (g && typeof g.focus === 'function') {
+        try { g.focus(); } catch {}
+      }
+    },
+    isDrilled() {
+      return Boolean(activeDrilledAdcode);
     },
     project: projection,
   };

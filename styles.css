@@ -113,6 +113,75 @@ html, body {
   filter: drop-shadow(0 0 12px var(--glow));
 }
 
+/* 省份图层与下钻状态 */
+.prov-layer {
+  transition: opacity .6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.prov-layer.drilled .prov {
+  opacity: 0.2;
+  pointer-events: none;
+  transition: opacity .6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.prov-layer.drilled .prov.active-drilled {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* 城市图层与交互 */
+.city-layer {
+  opacity: 0;
+  transition: opacity .5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.city-layer.show {
+  opacity: 1;
+}
+
+.city {
+  cursor: pointer;
+  outline: none;
+}
+
+.city .cvis {
+  fill: var(--prov-fill);
+  stroke: var(--prov-stroke);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+  transition: fill .24s cubic-bezier(0.16, 1, 0.3, 1),
+              stroke .24s cubic-bezier(0.16, 1, 0.3, 1),
+              filter .24s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.city:hover .cvis {
+  fill: var(--prov-hover-fill);
+  stroke: var(--prov-hover-stroke);
+}
+
+.city.lit .cvis {
+  fill: url(#litGrad);
+  stroke: var(--lit-stroke);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 0 10px var(--glow)) drop-shadow(0 0 2px var(--lit-stroke));
+}
+
+.city.lit:hover .cvis {
+  filter: drop-shadow(0 0 16px var(--glow)) drop-shadow(0 0 3px var(--lit-stroke));
+}
+
+.city:focus-visible {
+  outline: none;
+}
+
+.city:focus-visible .cvis {
+  stroke: var(--lit-stroke) !important;
+  stroke-width: 2.2 !important;
+  vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 0 12px var(--glow));
+}
+
 .theme-btn:focus-visible {
   outline: 2px solid var(--lit-stroke);
   outline-offset: 3px;
@@ -170,6 +239,84 @@ html, body {
   font-size: 12px;
   color: var(--text-dim);
   letter-spacing: .12em;
+}
+
+/* 面包屑（半透毛玻璃常驻导航） */
+.breadcrumb {
+  position: fixed;
+  top: max(84px, calc(72px + env(safe-area-inset-top)));
+  left: max(26px, calc(16px + env(safe-area-inset-left)));
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: var(--capsule-bg);
+  border: 1px solid var(--capsule-border);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 4px 16px -2px rgba(0,0,0,.22), 0 8px 24px -4px rgba(0,0,0,.15);
+  font-size: 13px;
+  color: var(--text);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-6px);
+  transition: opacity .35s cubic-bezier(0.16, 1, 0.3, 1),
+              transform .35s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+}
+
+.breadcrumb.show {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.bc-link {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: inherit;
+  transition: color .2s ease, background .2s ease;
+}
+
+.bc-link:hover {
+  color: var(--lit-stroke);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.bc-link:focus-visible {
+  outline: 2px solid var(--lit-stroke);
+  outline-offset: 2px;
+}
+
+.bc-sep {
+  color: var(--text-dim);
+  opacity: 0.5;
+  font-size: 11px;
+}
+
+.bc-current {
+  color: var(--text);
+  font-weight: 600;
+  padding: 2px 4px;
+  letter-spacing: .02em;
+}
+
+.bc-count {
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: normal;
+  margin-left: 2px;
+}
+
+.bc-count b {
+  color: var(--lit-stroke);
 }
 
 /* 进度胶囊（双重弥散投影与平滑伸缩） */
@@ -308,6 +455,14 @@ html, body {
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   box-shadow: 0 8px 24px -4px rgba(0,0,0,.22);
+  transition: opacity .5s cubic-bezier(0.16, 1, 0.3, 1),
+              transform .5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#inset-wrap.hide {
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.92);
 }
 
 #inset {
@@ -370,6 +525,13 @@ html, body {
   margin-left: 6px;
 }
 
+#tooltip .sub {
+  color: var(--text-dim);
+  font-size: 11px;
+  margin-left: 6px;
+  opacity: 0.85;
+}
+
 /* 熄灭确认气泡 */
 #popover {
   position: fixed;
@@ -428,6 +590,17 @@ html, body {
 #popover button:hover {
   background: var(--capsule-bg);
   transform: translateY(-1px);
+}
+
+#popover button#popover-drill {
+  border-color: var(--capsule-border);
+  color: var(--lit-stroke);
+  font-weight: 500;
+}
+
+#popover button#popover-drill:hover {
+  background: var(--capsule-bg);
+  border-color: var(--lit-stroke);
 }
 
 #popover button.danger {
@@ -579,6 +752,12 @@ html, body {
     font-size: 11px;
     letter-spacing: .08em;
   }
+  .breadcrumb {
+    top: max(56px, calc(46px + env(safe-area-inset-top)));
+    left: max(16px, calc(10px + env(safe-area-inset-left)));
+    padding: 5px 12px;
+    font-size: 12px;
+  }
   .progress-capsule {
     top: auto;
     bottom: max(14px, calc(10px + env(safe-area-inset-bottom)));
@@ -631,6 +810,12 @@ html, body {
   }
   .brand p {
     display: none;
+  }
+  .breadcrumb {
+    top: max(38px, calc(34px + env(safe-area-inset-top)));
+    left: max(16px, calc(12px + env(safe-area-inset-left)));
+    padding: 4px 10px;
+    font-size: 11px;
   }
   .progress-capsule {
     top: max(10px, calc(6px + env(safe-area-inset-top)));

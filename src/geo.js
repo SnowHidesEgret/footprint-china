@@ -2,7 +2,7 @@
  * 点亮中国 · 地理数据层
  * 加载本地 GeoJSON，拆分为 34 个省级行政区 + 南海诸岛要素
  */
-import { STORE_KEY } from './config.js?v=20260930a';
+import { STORE_KEY } from './config.js?v=20260930b';
 
 const GEO_URL = 'maps/china.json';
 const ISLANDS_ADCODE = '100000_JD';
@@ -95,6 +95,52 @@ export async function loadGeo() {
 
   cache = { provinces, islands };
   return cache;
+}
+
+const cityCache = new Map();
+
+/**
+ * 懒加载省份下属城市/区县 GeoJSON（内存 Map 缓存）
+ * @param {string|number} provinceAdcode 省份 adcode
+ * @returns {Promise<Array>} 纠正环绕向后的要素数组
+ */
+export async function loadCityGeo(provinceAdcode) {
+  const code = String(provinceAdcode || '').trim();
+  if (!code) throw new Error('无效的省份编码');
+  if (cityCache.has(code)) {
+    return cityCache.get(code);
+  }
+
+  // 优先获取 _full.json（地级市/区县要素集合），404 时回退获取 .json（如台湾省）
+  let res = await fetch(`https://geo.datav.aliyun.com/areas_v3/bound/${code}_full.json`);
+  if (!res.ok && res.status === 404) {
+    res = await fetch(`https://geo.datav.aliyun.com/areas_v3/bound/${code}.json`);
+  }
+  if (!res.ok) {
+    throw new Error(`城市数据加载失败: ${res.status}`);
+  }
+
+  const fc = await res.json();
+  if (!fc || !Array.isArray(fc.features)) {
+    throw new Error('城市数据格式异常');
+  }
+
+  const cities = [];
+  for (const f of fc.features) {
+    if (!f || !f.properties) continue;
+    if (f.geometry) {
+      rewindGeometry(f.geometry);
+    }
+    const adcode = String(f.properties.adcode || '').trim();
+    const name = String(f.properties.name || '').trim();
+    if (!name || !adcode) continue;
+    cities.push(f);
+  }
+
+  cities.sort((a, b) => String(a.properties.adcode).localeCompare(String(b.properties.adcode)));
+
+  cityCache.set(code, cities);
+  return cities;
 }
 
 /** localStorage 读写（带完整容错） */
