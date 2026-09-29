@@ -1,5 +1,5 @@
 /maps/*
-  Cache-Control: no-cache
+  Cache-Control: public, max-age=86400
 /src/*
   Cache-Control: no-cache
 /styles.css

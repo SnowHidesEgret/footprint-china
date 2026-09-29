@@ -2,8 +2,8 @@
  * 点亮中国 · 状态管理（单向 Store）
  * 状态 → 持久化 → 通知订阅者重渲染，保持单一数据源
  */
-import { TOTAL_PROVINCES } from './config.js?v=20260930b';
-import { storage } from './geo.js?v=20260930b';
+import { TOTAL_PROVINCES } from './config.js?v=20260930c';
+import { storage } from './geo.js?v=20260930c';
 
 const VALID_THEMES = ['dark', 'light'];
 
@@ -30,14 +30,15 @@ class Store {
       }
     }
 
-    // cities 防御性校验，只接受字符串 adcode -> true
+    // cities 防御性校验：只接受 6 位数字 adcode -> true，引用了无城市数据省份的脏条目直接丢弃
     const rawCities = (raw.cities && typeof raw.cities === 'object' && !Array.isArray(raw.cities))
       ? raw.cities
       : {};
     const cities = {};
     for (const [code, val] of Object.entries(rawCities)) {
-      if (val === true && typeof code === 'string' && code.trim()) {
-        cities[code.trim()] = true;
+      const c = typeof code === 'string' ? code.trim() : '';
+      if (val === true && /^\d{6}$/.test(c)) {
+        cities[c] = true;
       }
     }
 

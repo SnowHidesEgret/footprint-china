@@ -2,7 +2,7 @@
  * 点亮中国 · 地理数据层
  * 加载本地 GeoJSON，拆分为 34 个省级行政区 + 南海诸岛要素
  */
-import { STORE_KEY } from './config.js?v=20260930b';
+import { STORE_KEY } from './config.js?v=20260930c';
 
 const GEO_URL = 'maps/china.json';
 const ISLANDS_ADCODE = '100000_JD';
@@ -111,10 +111,11 @@ export async function loadCityGeo(provinceAdcode) {
     return cityCache.get(code);
   }
 
-  // 优先获取 _full.json（地级市/区县要素集合），404 时回退获取 .json（如台湾省）
-  let res = await fetch(`https://geo.datav.aliyun.com/areas_v3/bound/${code}_full.json`);
+  // 同源懒加载本地城市 GeoJSON（不再跨域请求 DataV，避开 CORS 与源站可用性问题）
+  // 优先 _full.json（地级市要素集合），404 时回退 .json（如台湾省）
+  let res = await fetch(`/maps/cities/${code}_full.json`);
   if (!res.ok && res.status === 404) {
-    res = await fetch(`https://geo.datav.aliyun.com/areas_v3/bound/${code}.json`);
+    res = await fetch(`/maps/cities/${code}.json`);
   }
   if (!res.ok) {
     throw new Error(`城市数据加载失败: ${res.status}`);

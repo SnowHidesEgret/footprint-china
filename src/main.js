@@ -1,12 +1,12 @@
 /**
  * 点亮中国 · 入口：组装地图 / 状态 / 视听反馈与交互
  */
-import { TOTAL_PROVINCES } from './config.js?v=20260930b';
-import { loadGeo, loadCityGeo } from './geo.js?v=20260930b';
-import { store } from './store.js?v=20260930b';
-import { buildMainMap, buildInset, applyThemeVars } from './map.js?v=20260930b';
-import { ensureCtx, setEnabled as setAudioEnabled, playLight, playUnlight, playAchievement } from './audio.js?v=20260930b';
-import { initParticles, burst as burstParticles, confetti as confettiParticles, setParticlesTheme, resizeParticles } from './particles.js?v=20260930b';
+import { TOTAL_PROVINCES } from './config.js?v=20260930c';
+import { loadGeo, loadCityGeo } from './geo.js?v=20260930c';
+import { store } from './store.js?v=20260930c';
+import { buildMainMap, buildInset, applyThemeVars } from './map.js?v=20260930c';
+import { ensureCtx, setEnabled as setAudioEnabled, playLight, playUnlight, playAchievement } from './audio.js?v=20260930c';
+import { initParticles, burst as burstParticles, confetti as confettiParticles, setParticlesTheme, resizeParticles } from './particles.js?v=20260930c';
 
 const $ = (id) => document.getElementById(id);
 const isTouch = matchMedia('(pointer: coarse)').matches;
@@ -165,12 +165,30 @@ async function startDrillDown(provinceFeature) {
     toast('城市数据加载失败，请重试');
     return;
   }
+  // 城市数据为空同样视为加载失败：彻底回滚，不产生任何坏状态
+  if (!Array.isArray(cities) || cities.length === 0) {
+    console.error('城市数据为空:', adcode);
+    toast('城市数据加载失败，请重试');
+    return;
+  }
 
-  currentDrill = { feature: provinceFeature, cities, adcode, name };
-  mapApi.drillDown(provinceFeature, cities, (c) => store.isCityLit(c));
-  updateBreadcrumb();
-  $('breadcrumb').classList.add('show');
-  $('inset-wrap').classList.add('hide');
+  try {
+    currentDrill = { feature: provinceFeature, cities, adcode, name };
+    mapApi.drillDown(provinceFeature, cities, (c) => store.isCityLit(c));
+    updateBreadcrumb();
+    $('breadcrumb').classList.add('show');
+    $('inset-wrap').classList.add('hide');
+  } catch (err) {
+    // 下钻渲染异常 → 彻底回滚到全国视图（清内存状态、清面包屑、地图复位），只弹 toast
+    console.error(err);
+    currentDrill = null;
+    $('breadcrumb').classList.remove('show');
+    $('inset-wrap').classList.remove('hide');
+    try {
+      mapApi.returnToNational(adcode);
+    } catch {}
+    toast('城市数据加载失败，请重试');
+  }
 }
 
 function returnToNational() {
