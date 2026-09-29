@@ -1,10 +1,10 @@
 /**
  * 点亮中国 · 入口：组装地图 / 状态 / 交互
  */
-import { TOTAL_PROVINCES } from './config.js';
-import { loadGeo } from './geo.js';
-import { store } from './store.js';
-import { buildMainMap, buildInset, applyThemeVars } from './map.js';
+import { TOTAL_PROVINCES } from './config.js?v=20260929c';
+import { loadGeo } from './geo.js?v=20260929c';
+import { store } from './store.js?v=20260929c';
+import { buildMainMap, buildInset, applyThemeVars } from './map.js?v=20260929c';
 
 const $ = (id) => document.getElementById(id);
 const isTouch = matchMedia('(pointer: coarse)').matches;
