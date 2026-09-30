@@ -3,7 +3,7 @@
  * 主地图：34 省 path；右下角：南海诸岛插图（真实岛礁数据 + 十段线示意）
  */
 import { geoMercator, geoPath, geoCentroid, geoBounds } from 'd3-geo';
-import { THEMES, LIT_GRADIENT, TEN_DASH_LINE, SMALL_REGION_HIT, HIT_CIRCLE_R } from './config.js?v=20260930d';
+import { THEMES, LIT_GRADIENT, TEN_DASH_LINE, SMALL_REGION_HIT, HIT_CIRCLE_R } from './config.js?v=20260930e';
 
 const NS = 'http://www.w3.org/2000/svg';
 const el = (tag, attrs = {}) => {
@@ -220,6 +220,15 @@ export function buildMainMap(svg, provinces, cbs, themeName = 'dark') {
     layer.appendChild(g);
     groups.set(adcode, g);
   }
+
+  // 飞地省份（北京、天津位于河北境内，香港、澳门位于广东境内）必须绘制在
+  // 包围它的省份之后，否则会被包围省份的 path 盖住，点击永远落不到它们身上
+  // （2026-09-30 实测：北京 110000、天津 120000 无法点亮）。
+  for (const code of ['110000', '120000', '810000', '820000']) {
+    const eg = groups.get(code);
+    if (eg) layer.appendChild(eg);
+  }
+
   svg.appendChild(layer);
   svg.appendChild(burstLayer);
 

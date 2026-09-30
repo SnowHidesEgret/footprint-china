@@ -1,12 +1,12 @@
 /**
  * 点亮中国 · 入口：组装地图 / 状态 / 视听反馈与交互
  */
-import { TOTAL_PROVINCES } from './config.js?v=20260930d';
-import { loadGeo, loadCityGeo, isCityGeoLoaded, getLoadedCityGeo } from './geo.js?v=20260930d';
-import { store } from './store.js?v=20260930d';
-import { buildMainMap, buildInset, applyThemeVars } from './map.js?v=20260930d';
-import { ensureCtx, setEnabled as setAudioEnabled, playLight, playUnlight, playAchievement } from './audio.js?v=20260930d';
-import { initParticles, burst as burstParticles, confetti as confettiParticles, setParticlesTheme, resizeParticles } from './particles.js?v=20260930d';
+import { TOTAL_PROVINCES } from './config.js?v=20260930e';
+import { loadGeo, loadCityGeo, isCityGeoLoaded, getLoadedCityGeo } from './geo.js?v=20260930e';
+import { store } from './store.js?v=20260930e';
+import { buildMainMap, buildInset, applyThemeVars } from './map.js?v=20260930e';
+import { ensureCtx, setEnabled as setAudioEnabled, playLight, playUnlight, playAchievement } from './audio.js?v=20260930e';
+import { initParticles, burst as burstParticles, confetti as confettiParticles, setParticlesTheme, resizeParticles } from './particles.js?v=20260930e';
 import {
   TITLES,
   ACHIEVEMENTS,
@@ -14,7 +14,7 @@ import {
   initProvinceAdcodes,
   getAdcode,
   checkAchievements,
-} from './achievements.js?v=20260930d';
+} from './achievements.js?v=20260930e';
 
 const $ = (id) => document.getElementById(id);
 const isTouch = matchMedia('(pointer: coarse)').matches;
