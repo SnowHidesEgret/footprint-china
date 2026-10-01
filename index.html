@@ -7,7 +7,7 @@
 <meta name="description" content="交互式中国地图足迹：点击你去过的省份，点亮属于你的山河版图。">
 <meta name="theme-color" content="#080c16">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗺️</text></svg>">
-<link rel="stylesheet" href="styles.css?v=20260930e">
+<link rel="stylesheet" href="styles.css?v=20261001a">
 <script type="importmap">
 { "imports": { "d3-geo": "https://esm.sh/d3-geo@3.1.1" } }
 </script>
@@ -33,6 +33,24 @@
   <span class="pct" id="lit-pct">0%</span>
   <span class="capsule-title-badge" id="current-title" style="display:none"></span>
 </div>
+
+<!-- 成员与家庭房间入口 -->
+<button class="theme-btn member-btn" id="member-btn" aria-label="家庭与成员" title="家庭成员与云同步">
+  <span class="member-dot" id="member-btn-dot"></span>
+  <span class="member-name" id="member-btn-name">我</span>
+  <span class="member-room-badge" id="member-btn-room" style="display:none"></span>
+</button>
+
+<!-- PK 透视开关 -->
+<button class="theme-btn pk-btn" id="pk-btn" aria-label="PK 透视" title="开启/关闭家庭 PK 透视" aria-pressed="false">
+  <span class="pk-icon">⚔️</span>
+  <span class="pk-btn-text">PK 透视</span>
+</button>
+
+<!-- PK 战报面板快捷入口 -->
+<button class="theme-btn pk-panel-btn" id="pk-panel-btn" aria-label="对战战报" title="查看家庭对战面板" style="display:none">
+  <span>📊 战报</span>
+</button>
 
 <button class="theme-btn achieve-btn" id="achieve-btn" aria-label="成就" title="成就">
   <span class="achieve-btn-content">🏆<span class="achieve-btn-text"> 成就</span></span>
@@ -62,7 +80,7 @@
   <svg id="inset"></svg>
 </div>
 
-<div class="hint">点选省份 · 镌刻足迹 &nbsp;·&nbsp; 再次点击已点亮的省份可熄灭（需确认）</div>
+<div class="hint" id="main-hint">点选省份 · 镌刻足迹 &nbsp;·&nbsp; 再次点击已点亮的省份可熄灭（需确认）</div>
 
 <div id="tooltip"><span class="dot"></span><span id="tooltip-name"></span><span class="st" id="tooltip-st"></span><span class="sub" id="tooltip-sub"></span></div>
 
@@ -114,6 +132,85 @@
   </div>
 </div>
 
-<script type="module" src="src/main.js?v=20260930e"></script>
+<!-- 家庭成员与房间管理浮层 -->
+<div id="family-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="family-title" style="display:none">
+  <div class="family-sheet">
+    <div class="family-header">
+      <div class="family-header-left">
+        <h2 id="family-title" class="family-title">🏮 家庭档案与云同步</h2>
+        <span class="family-sync-indicator" id="family-sync-indicator">离线模式</span>
+      </div>
+      <button class="modal-close" id="family-close" type="button" aria-label="关闭">&times;</button>
+    </div>
+    <div class="family-body">
+      <!-- 房间区域 -->
+      <section class="family-section room-box" id="room-section">
+        <!-- 由 JS 渲染未联机或已联机内容 -->
+      </section>
+
+      <!-- 成员列表区域 -->
+      <section class="family-section">
+        <div class="section-header-row">
+          <h3 class="section-title">家庭成员（上限 4 人）</h3>
+          <button class="btn-subtle" id="add-member-toggle-btn" type="button">+ 添加成员</button>
+        </div>
+
+        <div id="add-member-form" class="add-member-form" style="display:none">
+          <input type="text" id="new-member-name-input" maxlength="10" placeholder="成员称呼（如：爸爸、妈妈）">
+          <button class="btn-primary" id="confirm-add-member-btn" type="button">确定</button>
+          <button class="btn-subtle" id="cancel-add-member-btn" type="button">取消</button>
+        </div>
+
+        <div class="member-list" id="family-member-list"></div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<!-- PK 对战透视面板浮层 -->
+<div id="pk-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="pk-title" style="display:none">
+  <div class="pk-sheet">
+    <div class="pk-header">
+      <div class="pk-header-left">
+        <h2 id="pk-title" class="pk-title">⚔️ 家庭足迹对战透视</h2>
+        <span class="pk-subtitle">家庭成员山河比拼 · 独占与合家欢</span>
+      </div>
+      <button class="modal-close" id="pk-close" type="button" aria-label="关闭">&times;</button>
+    </div>
+    <div class="pk-body">
+      <!-- 共同足迹与覆盖率概览 -->
+      <div class="pk-summary-row">
+        <div class="pk-summary-card">
+          <div class="pk-summary-num" id="pk-family-count">0</div>
+          <div class="pk-summary-label">✨ 合家欢共同足迹</div>
+        </div>
+        <div class="pk-summary-card">
+          <div class="pk-summary-num" id="pk-total-lit">0 / 34</div>
+          <div class="pk-summary-label">🗺️ 全家足迹覆盖率</div>
+        </div>
+      </div>
+
+      <!-- 每人点亮横条对比 -->
+      <section class="pk-section">
+        <h3 class="section-title">成员点亮对比</h3>
+        <div class="pk-bars" id="pk-member-bars"></div>
+      </section>
+
+      <!-- 独占省份列表 -->
+      <section class="pk-section">
+        <h3 class="section-title">各成员独占省份</h3>
+        <div class="pk-solo-grid" id="pk-solo-grid"></div>
+      </section>
+
+      <!-- 合家欢共同走过省份 -->
+      <section class="pk-section">
+        <h3 class="section-title">共同足迹列表（合家欢）</h3>
+        <div class="pk-family-tags" id="pk-family-tags"></div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="src/main.js?v=20261001a"></script>
 </body>
 </html>
