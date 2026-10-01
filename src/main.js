@@ -2,12 +2,12 @@
  * 点亮中国 · 入口：组装地图 / 状态 / 视听反馈与交互
  * 包含 Phase 2（音效/粒子/成就/城市下钻/称号/主题）与 Phase 3（多用户云同步/PK透视对战）
  */
-import { TOTAL_PROVINCES, MAX_MEMBERS } from './config.js?v=20261001a';
-import { loadGeo, loadCityGeo, isCityGeoLoaded, getLoadedCityGeo } from './geo.js?v=20261001a';
-import { store } from './store.js?v=20261001a';
-import { buildMainMap, buildInset, applyThemeVars } from './map.js?v=20261001a';
-import { ensureCtx, setEnabled as setAudioEnabled, playLight, playUnlight, playAchievement } from './audio.js?v=20261001a';
-import { initParticles, burst as burstParticles, confetti as confettiParticles, setParticlesTheme, resizeParticles } from './particles.js?v=20261001a';
+import { TOTAL_PROVINCES, MAX_MEMBERS, MEMBER_COLORS } from './config.js?v=20261001b';
+import { loadGeo, loadCityGeo, isCityGeoLoaded, getLoadedCityGeo } from './geo.js?v=20261001b';
+import { store } from './store.js?v=20261001b';
+import { buildMainMap, buildInset, applyThemeVars } from './map.js?v=20261001b';
+import { ensureCtx, setEnabled as setAudioEnabled, playLight, playUnlight, playAchievement } from './audio.js?v=20261001b';
+import { initParticles, burst as burstParticles, confetti as confettiParticles, setParticlesTheme, resizeParticles } from './particles.js?v=20261001b';
 import {
   TITLES,
   ACHIEVEMENTS,
@@ -15,7 +15,7 @@ import {
   initProvinceAdcodes,
   getAdcode,
   checkAchievements,
-} from './achievements.js?v=20261001a';
+} from './achievements.js?v=20261001b';
 import {
   initSync,
   createRoom,
@@ -23,7 +23,7 @@ import {
   fetchRoom,
   deleteMember as deleteRemoteMember,
   subscribeSyncStatus,
-} from './sync.js?v=20261001a';
+} from './sync.js?v=20261001b';
 
 const $ = (id) => document.getElementById(id);
 const isTouch = matchMedia('(pointer: coarse)').matches;
@@ -134,6 +134,51 @@ function toast(html) {
   t.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => t.classList.remove('show'), 1600);
+}
+
+/* ---------- 通用确认弹窗（替代原生 confirm：原生弹窗在部分浏览器/自动化环境会被拦截导致无响应） ---------- */
+let confirmResolve = null;
+function closeConfirm(val) {
+  const bd = document.getElementById('confirm-backdrop');
+  if (bd) bd.classList.remove('show');
+  if (confirmResolve) {
+    confirmResolve(val);
+    confirmResolve = null;
+  }
+}
+function confirmDialog(message, { confirmText = '确定', danger = false } = {}) {
+  return new Promise((resolve) => {
+    let bd = document.getElementById('confirm-backdrop');
+    if (!bd) {
+      bd = document.createElement('div');
+      bd.id = 'confirm-backdrop';
+      bd.className = 'modal-backdrop';
+      bd.style.zIndex = '90';
+      bd.innerHTML = `
+        <div class="confirm-card" role="alertdialog" aria-modal="true" aria-labelledby="confirm-msg">
+          <p id="confirm-msg" class="confirm-msg"></p>
+          <div class="confirm-actions">
+            <button type="button" class="btn-subtle" id="confirm-cancel-btn">取消</button>
+            <button type="button" class="btn-primary" id="confirm-ok-btn">确定</button>
+          </div>
+        </div>`;
+      document.body.appendChild(bd);
+      bd.querySelector('#confirm-cancel-btn').addEventListener('click', () => closeConfirm(false));
+      bd.querySelector('#confirm-ok-btn').addEventListener('click', () => closeConfirm(true));
+      bd.addEventListener('click', (e) => {
+        if (e.target === bd) closeConfirm(false);
+      });
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && confirmResolve) closeConfirm(false);
+      });
+    }
+    confirmResolve = resolve;
+    bd.querySelector('#confirm-msg').textContent = message;
+    const okBtn = bd.querySelector('#confirm-ok-btn');
+    okBtn.textContent = confirmText;
+    okBtn.classList.toggle('danger', danger);
+    bd.classList.add('show');
+  });
 }
 
 /* ---------- tooltip / popover ---------- */
@@ -659,8 +704,9 @@ function renderFamilyModal() {
       }
     });
 
-    $('btn-leave-room').addEventListener('click', () => {
-      if (confirm('确定要退出当前家庭房间吗？退出后将转为纯本机模式。')) {
+    $('btn-leave-room').addEventListener('click', async () => {
+      const ok = await confirmDialog('确定要退出当前家庭房间吗？退出后将转为纯本机模式。');
+      if (ok) {
         store.setRoomCode(null);
         toast('已退出房间，转为本机模式');
         renderFamilyModal();
@@ -716,7 +762,8 @@ function renderFamilyModal() {
       e.stopPropagation();
       const id = btn.getAttribute('data-id');
       const name = btn.getAttribute('data-name');
-      if (confirm(`确定删除家庭成员【${name}】的足迹档案吗？此操作不可逆。`)) {
+      const ok = await confirmDialog(`确定删除家庭成员【${name}】的足迹档案吗？此操作不可逆。`, { confirmText: '删除', danger: true });
+      if (ok) {
         if (roomCode) {
           deleteRemoteMember(roomCode, id);
         }
@@ -765,11 +812,39 @@ function closeFamilyModal() {
 }
 
 // 添加成员交互
+/* ---------- Phase 3: 新建成员配色选择（鎏金/青瓷/朱砂/黛蓝） ---------- */
+let selectedNewMemberColor = '';
+function renderNewMemberColorRow() {
+  const row = $('new-member-color-row');
+  if (!row) return;
+  const usedColors = new Set(store.getMembers().map((m) => m.color));
+  const defaultColor = (MEMBER_COLORS.find((c) => !usedColors.has(c.value)) || MEMBER_COLORS[0]).value;
+  if (!selectedNewMemberColor || usedColors.has(selectedNewMemberColor)) {
+    selectedNewMemberColor = defaultColor;
+  }
+  row.innerHTML = '';
+  for (const c of MEMBER_COLORS) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'color-swatch' + (c.value === selectedNewMemberColor ? ' selected' : '');
+    b.style.background = c.value;
+    b.title = c.name;
+    b.setAttribute('aria-label', `配色${c.name}`);
+    b.setAttribute('aria-pressed', c.value === selectedNewMemberColor ? 'true' : 'false');
+    b.addEventListener('click', () => {
+      selectedNewMemberColor = c.value;
+      renderNewMemberColorRow();
+    });
+    row.appendChild(b);
+  }
+}
+
 $('add-member-toggle-btn').addEventListener('click', () => {
   const form = $('add-member-form');
   const isHidden = form.style.display === 'none';
   form.style.display = isHidden ? 'flex' : 'none';
   if (isHidden) {
+    renderNewMemberColorRow();
     $('new-member-name-input').focus();
   }
 });
@@ -786,9 +861,10 @@ $('confirm-add-member-btn').addEventListener('click', () => {
     toast('请输入成员称呼');
     return;
   }
-  const newMember = store.addMember(name);
+  const newMember = store.addMember(name, selectedNewMemberColor);
   if (newMember) {
     input.value = '';
+    selectedNewMemberColor = '';
     $('add-member-form').style.display = 'none';
     renderFamilyModal();
     toast(`已添加家庭成员 <b>${newMember.name}</b>`);

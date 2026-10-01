@@ -1732,7 +1732,44 @@ html, body {
   gap: 8px;
 }
 
+/* 通用确认弹窗 */
+.confirm-card {
+  max-width: 340px;
+  width: 86%;
+  background: var(--tooltip-bg);
+  border: 1.5px solid var(--lit-stroke);
+  box-shadow: 0 16px 48px -8px rgba(0, 0, 0, 0.55), 0 0 28px var(--glow);
+  border-radius: 18px;
+  padding: 26px 22px 20px;
+  text-align: center;
+  position: relative;
+  transform: scale(0.9);
+  transition: transform .25s cubic-bezier(0.16, 1, 0.3, 1);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+.modal-backdrop.show .confirm-card {
+  transform: scale(1);
+}
+.confirm-msg {
+  margin: 0 0 20px;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.7;
+}
+.confirm-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+.btn-primary.danger {
+  background: linear-gradient(135deg, #C4574E, #96332E);
+  color: #fff8f5;
+}
+
+/* 新建成员配色选择 */
 .add-member-form {
+  flex-wrap: wrap;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1740,6 +1777,38 @@ html, body {
   background: rgba(255, 255, 255, 0.04);
   border-radius: 10px;
   border: 1px dashed rgba(148, 163, 184, 0.3);
+}
+.color-pick-row {
+  flex-basis: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 2px 0;
+}
+.color-pick-row::before {
+  content: '配色';
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.color-swatch {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  padding: 0;
+  cursor: pointer;
+  transition: transform .15s ease, border-color .15s ease, box-shadow .15s ease;
+}
+.color-swatch:hover {
+  transform: scale(1.12);
+}
+.color-swatch.selected {
+  border-color: #fff;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.25), 0 0 12px currentColor;
+}
+.color-swatch:focus-visible {
+  outline: 2px solid var(--lit-stroke);
+  outline-offset: 2px;
 }
 
 .add-member-form input {
