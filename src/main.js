@@ -2,12 +2,12 @@
  * 点亮中国 · 入口：组装地图 / 状态 / 视听反馈与交互
  * 包含 Phase 2（音效/粒子/成就/城市下钻/称号/主题）与 Phase 3（多用户云同步/PK透视对战）
  */
-import { TOTAL_PROVINCES, MAX_MEMBERS, MEMBER_COLORS } from './config.js?v=20261001b';
-import { loadGeo, loadCityGeo, isCityGeoLoaded, getLoadedCityGeo } from './geo.js?v=20261001b';
-import { store } from './store.js?v=20261001b';
-import { buildMainMap, buildInset, applyThemeVars } from './map.js?v=20261001b';
-import { ensureCtx, setEnabled as setAudioEnabled, playLight, playUnlight, playAchievement } from './audio.js?v=20261001b';
-import { initParticles, burst as burstParticles, confetti as confettiParticles, setParticlesTheme, resizeParticles } from './particles.js?v=20261001b';
+import { TOTAL_PROVINCES, MAX_MEMBERS, MEMBER_COLORS } from './config.js?v=20261001c';
+import { loadGeo, loadCityGeo, isCityGeoLoaded, getLoadedCityGeo } from './geo.js?v=20261001c';
+import { store } from './store.js?v=20261001c';
+import { buildMainMap, buildInset, applyThemeVars } from './map.js?v=20261001c';
+import { ensureCtx, setEnabled as setAudioEnabled, playLight, playUnlight, playAchievement } from './audio.js?v=20261001c';
+import { initParticles, burst as burstParticles, confetti as confettiParticles, setParticlesTheme, resizeParticles } from './particles.js?v=20261001c';
 import {
   TITLES,
   ACHIEVEMENTS,
@@ -15,7 +15,7 @@ import {
   initProvinceAdcodes,
   getAdcode,
   checkAchievements,
-} from './achievements.js?v=20261001b';
+} from './achievements.js?v=20261001c';
 import {
   initSync,
   createRoom,
@@ -23,7 +23,7 @@ import {
   fetchRoom,
   deleteMember as deleteRemoteMember,
   subscribeSyncStatus,
-} from './sync.js?v=20261001b';
+} from './sync.js?v=20261001c';
 
 const $ = (id) => document.getElementById(id);
 const isTouch = matchMedia('(pointer: coarse)').matches;
@@ -140,7 +140,11 @@ function toast(html) {
 let confirmResolve = null;
 function closeConfirm(val) {
   const bd = document.getElementById('confirm-backdrop');
-  if (bd) bd.classList.remove('show');
+  if (bd) {
+    bd.classList.remove('show');
+    bd.setAttribute('inert', '');
+    bd.setAttribute('aria-hidden', 'true');
+  }
   if (confirmResolve) {
     confirmResolve(val);
     confirmResolve = null;
@@ -154,6 +158,8 @@ function confirmDialog(message, { confirmText = '确定', danger = false } = {})
       bd.id = 'confirm-backdrop';
       bd.className = 'modal-backdrop';
       bd.style.zIndex = '90';
+      bd.setAttribute('inert', '');
+      bd.setAttribute('aria-hidden', 'true');
       bd.innerHTML = `
         <div class="confirm-card" role="alertdialog" aria-modal="true" aria-labelledby="confirm-msg">
           <p id="confirm-msg" class="confirm-msg"></p>
@@ -177,6 +183,8 @@ function confirmDialog(message, { confirmText = '确定', danger = false } = {})
     const okBtn = bd.querySelector('#confirm-ok-btn');
     okBtn.textContent = confirmText;
     okBtn.classList.toggle('danger', danger);
+    bd.removeAttribute('inert');
+    bd.setAttribute('aria-hidden', 'false');
     bd.classList.add('show');
   });
 }

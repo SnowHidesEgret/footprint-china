@@ -662,7 +662,7 @@ html, body {
   bottom: max(64px, calc(48px + env(safe-area-inset-bottom)));
   left: 50%;
   transform: translateX(-50%) translateY(8px);
-  z-index: 30;
+  z-index: 100;
   padding: 9px 20px;
   border-radius: 999px;
   background: var(--tooltip-bg);
