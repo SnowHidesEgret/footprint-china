@@ -1,12 +1,13 @@
 /**
  * 点亮中国 · 入口：组装地图 / 状态 / 视听反馈与交互
+ * 包含 Phase 2（音效/粒子/成就/城市下钻/称号/主题）与 Phase 3（多用户云同步/PK透视对战）
  */
-import { TOTAL_PROVINCES } from './config.js?v=20260930e';
-import { loadGeo, loadCityGeo, isCityGeoLoaded, getLoadedCityGeo } from './geo.js?v=20260930e';
-import { store } from './store.js?v=20260930e';
-import { buildMainMap, buildInset, applyThemeVars } from './map.js?v=20260930e';
-import { ensureCtx, setEnabled as setAudioEnabled, playLight, playUnlight, playAchievement } from './audio.js?v=20260930e';
-import { initParticles, burst as burstParticles, confetti as confettiParticles, setParticlesTheme, resizeParticles } from './particles.js?v=20260930e';
+import { TOTAL_PROVINCES, MAX_MEMBERS, MEMBER_COLORS } from './config.js?v=20261001c';
+import { loadGeo, loadCityGeo, isCityGeoLoaded, getLoadedCityGeo } from './geo.js?v=20261001c';
+import { store } from './store.js?v=20261001c';
+import { buildMainMap, buildInset, applyThemeVars } from './map.js?v=20261001c';
+import { ensureCtx, setEnabled as setAudioEnabled, playLight, playUnlight, playAchievement } from './audio.js?v=20261001c';
+import { initParticles, burst as burstParticles, confetti as confettiParticles, setParticlesTheme, resizeParticles } from './particles.js?v=20261001c';
 import {
   TITLES,
   ACHIEVEMENTS,
@@ -14,7 +15,15 @@ import {
   initProvinceAdcodes,
   getAdcode,
   checkAchievements,
-} from './achievements.js?v=20260930e';
+} from './achievements.js?v=20261001c';
+import {
+  initSync,
+  createRoom,
+  joinRoom,
+  fetchRoom,
+  deleteMember as deleteRemoteMember,
+  subscribeSyncStatus,
+} from './sync.js?v=20261001c';
 
 const $ = (id) => document.getElementById(id);
 const isTouch = matchMedia('(pointer: coarse)').matches;
@@ -32,6 +41,8 @@ let unlockTriggerEl = null;
 
 // 成就墙焦点记忆
 let galleryPrevFocus = null;
+let familyPrevFocus = null;
+let pkPrevFocus = null;
 
 // 下钻层级状态
 let currentDrill = null; // { feature, cities, adcode, name }
@@ -125,14 +136,70 @@ function toast(html) {
   toastTimer = setTimeout(() => t.classList.remove('show'), 1600);
 }
 
+/* ---------- 通用确认弹窗（替代原生 confirm：原生弹窗在部分浏览器/自动化环境会被拦截导致无响应） ---------- */
+let confirmResolve = null;
+function closeConfirm(val) {
+  const bd = document.getElementById('confirm-backdrop');
+  if (bd) {
+    bd.classList.remove('show');
+    bd.setAttribute('inert', '');
+    bd.setAttribute('aria-hidden', 'true');
+  }
+  if (confirmResolve) {
+    confirmResolve(val);
+    confirmResolve = null;
+  }
+}
+function confirmDialog(message, { confirmText = '确定', danger = false } = {}) {
+  return new Promise((resolve) => {
+    let bd = document.getElementById('confirm-backdrop');
+    if (!bd) {
+      bd = document.createElement('div');
+      bd.id = 'confirm-backdrop';
+      bd.className = 'modal-backdrop';
+      bd.style.zIndex = '90';
+      bd.setAttribute('inert', '');
+      bd.setAttribute('aria-hidden', 'true');
+      bd.innerHTML = `
+        <div class="confirm-card" role="alertdialog" aria-modal="true" aria-labelledby="confirm-msg">
+          <p id="confirm-msg" class="confirm-msg"></p>
+          <div class="confirm-actions">
+            <button type="button" class="btn-subtle" id="confirm-cancel-btn">取消</button>
+            <button type="button" class="btn-primary" id="confirm-ok-btn">确定</button>
+          </div>
+        </div>`;
+      document.body.appendChild(bd);
+      bd.querySelector('#confirm-cancel-btn').addEventListener('click', () => closeConfirm(false));
+      bd.querySelector('#confirm-ok-btn').addEventListener('click', () => closeConfirm(true));
+      bd.addEventListener('click', (e) => {
+        if (e.target === bd) closeConfirm(false);
+      });
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && confirmResolve) closeConfirm(false);
+      });
+    }
+    confirmResolve = resolve;
+    bd.querySelector('#confirm-msg').textContent = message;
+    const okBtn = bd.querySelector('#confirm-ok-btn');
+    okBtn.textContent = confirmText;
+    okBtn.classList.toggle('danger', danger);
+    bd.removeAttribute('inert');
+    bd.setAttribute('aria-hidden', 'false');
+    bd.classList.add('show');
+  });
+}
+
 /* ---------- tooltip / popover ---------- */
 const tooltip = $('tooltip');
-function showTooltip(name, lit, x, y, isProvince = true) {
+function showTooltip(name, lit, x, y, isProvince = true, customStatusText = '', customSubText = '') {
   $('tooltip-name').textContent = name;
-  $('tooltip-st').textContent = lit ? '已点亮' : '未点亮';
+  $('tooltip-st').textContent = customStatusText || (lit ? '已点亮' : '未点亮');
   const subEl = $('tooltip-sub');
   if (subEl) {
-    if (isProvince && !isTouch) {
+    if (customSubText) {
+      subEl.textContent = ' · ' + customSubText;
+      subEl.style.display = '';
+    } else if (isProvince && !isTouch && !store.isPkMode()) {
       subEl.textContent = ' · 双击探索城市';
       subEl.style.display = '';
     } else {
@@ -174,9 +241,7 @@ function hidePopover() {
   if (lastFocusedEl && typeof lastFocusedEl.focus === 'function') {
     try {
       lastFocusedEl.focus();
-    } catch {
-      // 忽略聚焦异常
-    }
+    } catch {}
     lastFocusedEl = null;
   }
 }
@@ -206,7 +271,6 @@ async function startDrillDown(provinceFeature) {
     toast('城市数据加载失败，请重试');
     return;
   }
-  // 城市数据为空同样视为加载失败：彻底回滚，不产生任何坏状态
   if (!Array.isArray(cities) || cities.length === 0) {
     console.error('城市数据为空:', adcode);
     toast('城市数据加载失败，请重试');
@@ -220,7 +284,6 @@ async function startDrillDown(provinceFeature) {
     $('breadcrumb').classList.add('show');
     $('inset-wrap').classList.add('hide');
   } catch (err) {
-    // 下钻渲染异常 → 彻底回滚到全国视图（清内存状态、清面包屑、地图复位），只弹 toast
     console.error(err);
     currentDrill = null;
     $('breadcrumb').classList.remove('show');
@@ -257,7 +320,7 @@ function triggerComboAndLightEffects(clientX, clientY, svgX, svgY, name) {
     const comboEl = $('combo');
     $('combo-text').textContent = `Combo x${combo}!`;
     comboEl.classList.remove('show');
-    void comboEl.offsetWidth; // 触发 reflow 重置动画
+    void comboEl.offsetWidth;
     comboEl.classList.add('show');
   }
   clearTimeout(comboTimer);
@@ -267,13 +330,8 @@ function triggerComboAndLightEffects(clientX, clientY, svgX, svgY, name) {
     combo = 0;
   }, 3000);
 
-  // 升半音播放点亮音效（第 n 次连击用半音数 n - 1）
   playLight(combo >= 2 ? combo - 1 : 0);
-
-  // 粒子爆裂喷发
   burstParticles(clientX, clientY, store.state.theme);
-
-  // 原有地图光晕与数字动画
   mapApi.burst(svgX, svgY);
   if (!currentDrill) {
     popNumber();
@@ -287,7 +345,6 @@ function onTap(f, svgX, svgY, clientX, clientY) {
   const name = f.properties.name;
   hideTooltip();
 
-  // 2. 关键冲突：单击点亮保持即时；300ms 内对同一省份发生第二次点击，则压制确认框、直接进入下钻
   const now = Date.now();
   if (now - lastProvinceClick.time <= 300 && lastProvinceClick.adcode === adcode) {
     lastProvinceClick = { time: 0, adcode: '' };
@@ -298,7 +355,6 @@ function onTap(f, svgX, svgY, clientX, clientY) {
   lastProvinceClick = { time: now, adcode };
 
   if (store.isLit(adcode)) {
-    // 已点亮 → 确认气泡（防误触，使用视口坐标精确定位）
     pendingUnlight = { adcode, name, isCity: false, feature: f };
     showPopover(name, clientX, clientY, false, f);
   } else {
@@ -312,14 +368,15 @@ function onTap(f, svgX, svgY, clientX, clientY) {
     if (!litSuccess) return;
 
     triggerComboAndLightEffects(clientX, clientY, svgX, svgY, name);
-    mapApi.update((c) => store.isLit(c), (c) => store.isCityLit(c));
+    mapApi.update(
+      (c) => store.isLit(c),
+      (c) => store.isCityLit(c),
+      store.isPkMode() ? store.getPkStats() : null
+    );
 
-    // 检查十二特色成就（只在"点亮"操作后检查），返回本轮新解锁；
-    // 解锁弹窗会播成就音效，本轮其他庆祝不再叠播
     const newAch = handleAchievementChecks();
     const unlockSoundPlayed = newAch.length > 0;
 
-    // 称号升级判定：升级时 toast 庆祝
     const litAfter = store.litCount();
     const pctAfter = litAfter / TOTAL_PROVINCES;
     const titleAfter = getTitleByCount(litAfter);
@@ -330,7 +387,6 @@ function onTap(f, svgX, svgY, clientX, clientY) {
       if (!unlockSoundPlayed) playAchievement();
     }
 
-    // 里程碑阈值礼花判定
     for (const t of THRESHOLDS) {
       if (pctBefore < t && pctAfter >= t && !firedThresholds.has(t)) {
         firedThresholds.add(t);
@@ -354,8 +410,7 @@ function onCityTap(cf, svgX, svgY, clientX, clientY) {
   hideTooltip();
 
   if (store.isCityLit(cadcode)) {
-    // 已点亮城市 → 确认气泡（防误触）
-    pendingUnlight = { adcode: cadcode, name: cname, isCity: true, feature: cf };
+    pendingUnlight = { adcode, name: cname, isCity: true, feature: cf };
     showPopover(cname, clientX, clientY, true, cf);
   } else {
     hidePopover();
@@ -367,12 +422,10 @@ function onCityTap(cf, svgX, svgY, clientX, clientY) {
     const success = store.lightCity(cadcode);
     if (!success) return;
 
-    // 城市点亮复用现有配色、粒子爆裂、音效、Combo 链路
     triggerComboAndLightEffects(clientX, clientY, svgX, svgY, cname);
     mapApi.updateCity(cadcode, true);
     updateBreadcrumb();
 
-    // 城市点亮同样触发阈值礼花判断（按省级进度口径）
     const litAfter = litBefore + 1;
     const pctAfter = litAfter / totalCities;
     for (const t of THRESHOLDS) {
@@ -385,7 +438,6 @@ function onCityTap(cf, svgX, svgY, clientX, clientY) {
       }
     }
 
-    // 检查十二特色成就（如 northland 北国风光所有地级市全点亮）
     handleAchievementChecks();
   }
 }
@@ -416,7 +468,6 @@ function showNextUnlockModal() {
   isShowingUnlockModal = true;
   const ach = unlockQueue.shift();
 
-  // 播放成就音效与全屏礼花
   playAchievement();
   confettiParticles(store.state.theme);
 
@@ -452,7 +503,6 @@ function renderGallery() {
 
   $('gallery-stats').innerHTML = `已解锁 <b>${unlockedCount}</b> / 12 个成就 · 当前称号：<b>${currentTitle ? currentTitle.name : '尚未启程'}</b>${maxTitle && (!currentTitle || maxTitle.level > currentTitle.level) ? ` · 历史最高：<b>${maxTitle.name}</b>` : ''}`;
 
-  // 1. 渲染八级称号进度列表
   const titleListEl = $('gallery-title-list');
   titleListEl.innerHTML = '';
   for (const t of TITLES) {
@@ -472,14 +522,12 @@ function renderGallery() {
     titleListEl.appendChild(card);
   }
 
-  // 2. 渲染十二特色成就网格
   const achieveGridEl = $('gallery-achieve-list');
   achieveGridEl.innerHTML = '';
   for (const ach of ACHIEVEMENTS) {
     const isUnlocked = store.isAchievementUnlocked(ach.id);
     const card = document.createElement('div');
     card.className = `achieve-card ${isUnlocked ? 'unlocked' : 'locked'}`;
-
     card.innerHTML = `
       <div class="ac-icon">${ach.icon}</div>
       <div class="ac-main">
@@ -532,6 +580,391 @@ function handleAchievementChecks() {
   return newlyUnlocked;
 }
 
+/* ---------- Phase 3: 顶部胶囊与 PK 开关渲染 ---------- */
+function renderMemberButton() {
+  const member = store.getCurrentMember();
+  const roomCode = store.getRoomCode();
+
+  if (member) {
+    $('member-btn-name').textContent = member.name;
+    $('member-btn-dot').style.background = member.color;
+    $('member-btn-dot').style.boxShadow = `0 0 8px ${member.color}`;
+  }
+
+  const roomBadge = $('member-btn-room');
+  if (roomCode) {
+    roomBadge.textContent = roomCode;
+    roomBadge.style.display = 'inline-block';
+  } else {
+    roomBadge.style.display = 'none';
+  }
+}
+
+function renderPkToggle() {
+  const isPk = store.isPkMode();
+  const btn = $('pk-btn');
+  const panelBtn = $('pk-panel-btn');
+  const hintEl = $('main-hint');
+
+  btn.classList.toggle('active', isPk);
+  btn.setAttribute('aria-pressed', isPk ? 'true' : 'false');
+  if (panelBtn) {
+    panelBtn.style.display = isPk ? 'inline-flex' : 'none';
+  }
+
+  if (hintEl) {
+    if (isPk) {
+      hintEl.textContent = '⚔️ PK 透视开启：单人独占显示成员色，多人同游金紫交辉高亮';
+    } else {
+      hintEl.textContent = '点选省份 · 镌刻足迹  ·  再次点击已点亮的省份可熄灭（需确认）';
+    }
+  }
+}
+
+/* ---------- Phase 3: 家庭成员与房间管理浮层 ---------- */
+function renderFamilyModal() {
+  const roomCode = store.getRoomCode();
+  const members = store.getMembers();
+  const currentMemberId = store.getCurrentMemberId();
+
+  // 1. 渲染房间区域
+  const roomSection = $('room-section');
+  if (!roomCode) {
+    roomSection.innerHTML = `
+      <div class="room-offline-box">
+        <p class="room-desc">当前为本机离线模式。可创建房间生成 6 位房间码，或输入房间码加入家人房间进行足迹云同步。</p>
+        <div class="room-actions">
+          <button class="btn-primary" id="btn-create-room" type="button">✨ 创建家庭房间</button>
+          <div class="room-join-row">
+            <input type="text" id="join-room-code-input" class="room-code-input" maxlength="6" placeholder="6位房间码">
+            <button class="btn-subtle" id="btn-join-room" type="button">加入房间</button>
+          </div>
+        </div>
+        <p class="room-notice">⚠️ 注：知道房间码的人都能读写家庭足迹数据，请在可信家人间共享。</p>
+      </div>
+    `;
+
+    $('btn-create-room').addEventListener('click', async () => {
+      const curMember = store.getCurrentMember();
+      const res = await createRoom(curMember.name);
+      if (res && res.code) {
+        store.setRoomCode(res.code);
+        toast(`🎉 家庭房间创建成功！房间码：<b>${res.code}</b>`);
+        renderFamilyModal();
+      } else {
+        toast('房间创建失败，已保持本机模式');
+      }
+    });
+
+    $('btn-join-room').addEventListener('click', async () => {
+      const input = $('join-room-code-input');
+      const code = (input.value || '').trim();
+      if (!/^\d{6}$/.test(code)) {
+        toast('请输入 6 位数字房间码');
+        return;
+      }
+      const curMember = store.getCurrentMember();
+      const res = await joinRoom(code, curMember.name);
+      if (res && res.memberId) {
+        store.setRoomCode(code);
+        if (Array.isArray(res.members)) {
+          store.mergeRemoteMembers(res.members);
+        }
+        toast(`🤝 已加入家庭房间 <b>${code}</b>`);
+        renderFamilyModal();
+      } else {
+        toast('加入房间失败，请核对房间码');
+      }
+    });
+  } else {
+    roomSection.innerHTML = `
+      <div class="room-online-box">
+        <div class="room-code-display">
+          <span class="room-code-label">家庭房间码：</span>
+          <span class="room-code-val">${roomCode}</span>
+          <button class="btn-subtle" id="btn-copy-room-code" type="button">复制</button>
+        </div>
+        <div class="room-actions">
+          <button class="btn-subtle" id="btn-sync-now" type="button">🔄 立即拉取全家数据</button>
+          <button class="btn-danger-sm" id="btn-leave-room" type="button">退出房间</button>
+        </div>
+        <p class="room-notice">⚠️ 注：知道房间码的人都能读写家庭足迹数据。</p>
+      </div>
+    `;
+
+    $('btn-copy-room-code').addEventListener('click', () => {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(roomCode);
+        toast('已复制房间码');
+      } else {
+        toast(`房间码：${roomCode}`);
+      }
+    });
+
+    $('btn-sync-now').addEventListener('click', async () => {
+      toast('正在拉取全家数据…');
+      const res = await fetchRoom(roomCode);
+      if (res && Array.isArray(res.members)) {
+        store.mergeRemoteMembers(res.members);
+        toast('全家数据同步完成！');
+      } else {
+        toast('同步失败，请检查网络');
+      }
+    });
+
+    $('btn-leave-room').addEventListener('click', async () => {
+      const ok = await confirmDialog('确定要退出当前家庭房间吗？退出后将转为纯本机模式。');
+      if (ok) {
+        store.setRoomCode(null);
+        toast('已退出房间，转为本机模式');
+        renderFamilyModal();
+      }
+    });
+  }
+
+  // 2. 渲染成员列表
+  const memberListEl = $('family-member-list');
+  memberListEl.innerHTML = '';
+
+  for (const m of members) {
+    const isCurrent = m.id === currentMemberId;
+    const litCount = Object.keys(m.footprint?.provinces || {}).length;
+
+    const card = document.createElement('div');
+    card.className = `member-card ${isCurrent ? 'active' : ''}`;
+    card.style.setProperty('--card-color', m.color);
+
+    card.innerHTML = `
+      <div class="member-card-left">
+        <span class="member-card-dot" style="background:${m.color};color:${m.color}"></span>
+        <div class="member-card-info">
+          <span class="member-card-name">
+            ${m.name}
+            ${isCurrent ? '<span class="member-card-tag">当前操作人</span>' : ''}
+          </span>
+          <span class="member-card-stats">已点亮 ${litCount} / 34 省份</span>
+        </div>
+      </div>
+      <div class="member-card-right">
+        ${!isCurrent ? `<button class="btn-subtle btn-switch-member" data-id="${m.id}" type="button">切换</button>` : ''}
+        ${members.length > 1 ? `<button class="btn-danger-sm btn-del-member" data-id="${m.id}" data-name="${m.name}" type="button" title="删除成员">&times;</button>` : ''}
+      </div>
+    `;
+    memberListEl.appendChild(card);
+  }
+
+  // 绑定切换成员
+  memberListEl.querySelectorAll('.btn-switch-member').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = btn.getAttribute('data-id');
+      store.setCurrentMember(id);
+      renderFamilyModal();
+      toast(`已切换为 <b>${store.getCurrentMember().name}</b>`);
+    });
+  });
+
+  // 绑定删除成员
+  memberListEl.querySelectorAll('.btn-del-member').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const id = btn.getAttribute('data-id');
+      const name = btn.getAttribute('data-name');
+      const ok = await confirmDialog(`确定删除家庭成员【${name}】的足迹档案吗？此操作不可逆。`, { confirmText: '删除', danger: true });
+      if (ok) {
+        if (roomCode) {
+          deleteRemoteMember(roomCode, id);
+        }
+        store.removeMember(id);
+        renderFamilyModal();
+        toast(`已删除成员【${name}】`);
+      }
+    });
+  });
+
+  // 成员上限控制
+  const addToggleBtn = $('add-member-toggle-btn');
+  const addForm = $('add-member-form');
+  if (members.length >= MAX_MEMBERS) {
+    addToggleBtn.disabled = true;
+    addToggleBtn.textContent = '已达4人上限';
+    addForm.style.display = 'none';
+  } else {
+    addToggleBtn.disabled = false;
+    addToggleBtn.textContent = '+ 添加成员';
+  }
+}
+
+function openFamilyModal() {
+  familyPrevFocus = document.activeElement;
+  renderFamilyModal();
+  const modal = $('family-modal');
+  modal.style.display = 'flex';
+  void modal.offsetWidth;
+  modal.classList.add('show');
+  const closeBtn = $('family-close');
+  if (closeBtn) closeBtn.focus();
+}
+
+function closeFamilyModal() {
+  const modal = $('family-modal');
+  if (!modal.classList.contains('show')) return;
+  modal.classList.remove('show');
+  setTimeout(() => {
+    modal.style.display = 'none';
+    if (familyPrevFocus && typeof familyPrevFocus.focus === 'function') {
+      try { familyPrevFocus.focus(); } catch {}
+      familyPrevFocus = null;
+    }
+  }, 220);
+}
+
+// 添加成员交互
+/* ---------- Phase 3: 新建成员配色选择（鎏金/青瓷/朱砂/黛蓝） ---------- */
+let selectedNewMemberColor = '';
+function renderNewMemberColorRow() {
+  const row = $('new-member-color-row');
+  if (!row) return;
+  const usedColors = new Set(store.getMembers().map((m) => m.color));
+  const defaultColor = (MEMBER_COLORS.find((c) => !usedColors.has(c.value)) || MEMBER_COLORS[0]).value;
+  if (!selectedNewMemberColor || usedColors.has(selectedNewMemberColor)) {
+    selectedNewMemberColor = defaultColor;
+  }
+  row.innerHTML = '';
+  for (const c of MEMBER_COLORS) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'color-swatch' + (c.value === selectedNewMemberColor ? ' selected' : '');
+    b.style.background = c.value;
+    b.title = c.name;
+    b.setAttribute('aria-label', `配色${c.name}`);
+    b.setAttribute('aria-pressed', c.value === selectedNewMemberColor ? 'true' : 'false');
+    b.addEventListener('click', () => {
+      selectedNewMemberColor = c.value;
+      renderNewMemberColorRow();
+    });
+    row.appendChild(b);
+  }
+}
+
+$('add-member-toggle-btn').addEventListener('click', () => {
+  const form = $('add-member-form');
+  const isHidden = form.style.display === 'none';
+  form.style.display = isHidden ? 'flex' : 'none';
+  if (isHidden) {
+    renderNewMemberColorRow();
+    $('new-member-name-input').focus();
+  }
+});
+
+$('cancel-add-member-btn').addEventListener('click', () => {
+  $('add-member-form').style.display = 'none';
+  $('new-member-name-input').value = '';
+});
+
+$('confirm-add-member-btn').addEventListener('click', () => {
+  const input = $('new-member-name-input');
+  const name = (input.value || '').trim();
+  if (!name) {
+    toast('请输入成员称呼');
+    return;
+  }
+  const newMember = store.addMember(name, selectedNewMemberColor);
+  if (newMember) {
+    input.value = '';
+    selectedNewMemberColor = '';
+    $('add-member-form').style.display = 'none';
+    renderFamilyModal();
+    toast(`已添加家庭成员 <b>${newMember.name}</b>`);
+  } else {
+    toast('家庭成员已满 4 人');
+  }
+});
+
+/* ---------- Phase 3: PK 对战透视面板 ---------- */
+function renderPkModal() {
+  const pkStats = store.getPkStats();
+
+  $('pk-family-count').textContent = `${pkStats.totalFamilyCount} 省`;
+  $('pk-total-lit').textContent = `${pkStats.totalLitCount} / 34 (${Math.round((pkStats.totalLitCount / 34) * 100)}%)`;
+
+  // 1. 横条对比
+  const barsEl = $('pk-member-bars');
+  barsEl.innerHTML = '';
+  for (const m of pkStats.members) {
+    const pct = Math.round((m.litCount / TOTAL_PROVINCES) * 100);
+    const row = document.createElement('div');
+    row.className = 'pk-bar-row';
+    row.innerHTML = `
+      <div class="pk-bar-name">
+        <span class="member-dot" style="background:${m.color};color:${m.color}"></span>
+        <span>${m.name}</span>
+      </div>
+      <div class="pk-bar-track">
+        <div class="pk-bar-fill" style="width:${pct}%;background:${m.color}"></div>
+      </div>
+      <div class="pk-bar-num">${m.litCount} 省 (${pct}%)</div>
+      <div class="pk-bar-solo">独占 ${m.soloProvinces.length} 省</div>
+    `;
+    barsEl.appendChild(row);
+  }
+
+  // 2. 独占省份网格
+  const soloGridEl = $('pk-solo-grid');
+  soloGridEl.innerHTML = '';
+  for (const m of pkStats.members) {
+    const box = document.createElement('div');
+    box.className = 'pk-solo-box';
+    const tagHtml = m.soloProvinces.length > 0
+      ? m.soloProvinces.map((p) => `<span class="pk-tag" style="color:${m.color}">${p.name}</span>`).join('')
+      : '<span class="empty-hint">暂无独占山河，快去点亮吧</span>';
+
+    box.innerHTML = `
+      <div class="pk-solo-box-head" style="color:${m.color}">
+        <span>${m.name}的专属领地</span>
+        <span>共 ${m.soloProvinces.length} 省</span>
+      </div>
+      <div class="pk-solo-tags">${tagHtml}</div>
+    `;
+    soloGridEl.appendChild(box);
+  }
+
+  // 3. 合家欢共同省份
+  const familyTagsEl = $('pk-family-tags');
+  if (pkStats.familyProvinces.length > 0) {
+    familyTagsEl.innerHTML = pkStats.familyProvinces
+      .map((p) => `<span class="pk-family-tag">✨ ${p.name} (${p.members.length}人点亮)</span>`)
+      .join('');
+  } else {
+    familyTagsEl.innerHTML = '<span class="empty-hint">全家尚未有点亮同一省份，快去创造共同回忆吧</span>';
+  }
+}
+
+function openPkModal() {
+  pkPrevFocus = document.activeElement;
+  renderPkModal();
+  const modal = $('pk-modal');
+  modal.style.display = 'flex';
+  void modal.offsetWidth;
+  modal.classList.add('show');
+  const closeBtn = $('pk-close');
+  if (closeBtn) closeBtn.focus();
+}
+
+function closePkModal() {
+  const modal = $('pk-modal');
+  if (!modal.classList.contains('show')) return;
+  modal.classList.remove('show');
+  setTimeout(() => {
+    modal.style.display = 'none';
+    if (pkPrevFocus && typeof pkPrevFocus.focus === 'function') {
+      try { pkPrevFocus.focus(); } catch {}
+      pkPrevFocus = null;
+    }
+  }, 220);
+}
+
+/* ---------- 弹窗与控制事件绑定 ---------- */
 $('unlock-ok').addEventListener('click', (e) => {
   e.stopPropagation();
   closeUnlockModal();
@@ -578,6 +1011,72 @@ if (gallerySheet) {
   });
 }
 
+// 成员与家庭房间管理弹窗
+$('member-btn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  openFamilyModal();
+});
+
+$('family-close').addEventListener('click', (e) => {
+  e.stopPropagation();
+  closeFamilyModal();
+});
+
+$('family-modal').addEventListener('click', (e) => {
+  if (e.target === $('family-modal')) {
+    closeFamilyModal();
+  }
+});
+
+const familySheet = document.querySelector('.family-sheet');
+if (familySheet) {
+  familySheet.addEventListener('click', (e) => {
+    e.stopPropagation();
+  });
+}
+
+// PK 透视开关与战报面板
+$('pk-btn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  store.togglePkMode();
+  renderPkToggle();
+  if (mapApi) {
+    mapApi.update(
+      (c) => store.isLit(c),
+      (c) => store.isCityLit(c),
+      store.isPkMode() ? store.getPkStats() : null
+    );
+  }
+  toast(store.isPkMode() ? '⚔️ PK 透视已开启' : 'PK 透视已关闭');
+});
+
+const pkPanelBtn = $('pk-panel-btn');
+if (pkPanelBtn) {
+  pkPanelBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openPkModal();
+  });
+}
+
+$('pk-close').addEventListener('click', (e) => {
+  e.stopPropagation();
+  closePkModal();
+});
+
+$('pk-modal').addEventListener('click', (e) => {
+  if (e.target === $('pk-modal')) {
+    closePkModal();
+  }
+});
+
+const pkSheet = document.querySelector('.pk-sheet');
+if (pkSheet) {
+  pkSheet.addEventListener('click', (e) => {
+    e.stopPropagation();
+  });
+}
+
+// 熄灭气泡
 $('popover-drill').addEventListener('click', (e) => {
   e.stopPropagation();
   if (pendingUnlight && pendingUnlight.feature) {
@@ -602,7 +1101,11 @@ $('popover-ok').addEventListener('click', (e) => {
       const unlitSuccess = store.unlight(pendingUnlight.adcode);
       if (unlitSuccess) {
         playUnlight();
-        mapApi.update((c) => store.isLit(c), (c) => store.isCityLit(c));
+        mapApi.update(
+          (c) => store.isLit(c),
+          (c) => store.isCityLit(c),
+          store.isPkMode() ? store.getPkStats() : null
+        );
         if (isTouch) toast(`已熄灭 ${pendingUnlight.name}`);
       }
     }
@@ -625,13 +1128,12 @@ document.addEventListener('click', (e) => {
   }
 });
 
-// 面包屑根节点点击返回全国视图
 $('bc-root').addEventListener('click', (e) => {
   e.stopPropagation();
   returnToNational();
 });
 
-// 支持按 Esc 键关闭弹窗或拉回全国视图
+// Esc 键关闭任意浮层
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' || e.key === 'Esc') {
     if ($('unlock-modal').classList.contains('show')) {
@@ -640,6 +1142,14 @@ document.addEventListener('keydown', (e) => {
     }
     if ($('gallery-modal').classList.contains('show')) {
       closeGallery();
+      return;
+    }
+    if ($('family-modal').classList.contains('show')) {
+      closeFamilyModal();
+      return;
+    }
+    if ($('pk-modal').classList.contains('show')) {
+      closePkModal();
       return;
     }
     if (popover.classList.contains('show')) {
@@ -681,7 +1191,6 @@ $('sound-btn').addEventListener('click', () => {
   toast(next ? '音效已开启' : '已静音');
 });
 
-// 首次用户手势（pointerdown 或 keydown）时按策略解锁 AudioContext
 const unlockAudio = () => ensureCtx();
 window.addEventListener('pointerdown', unlockAudio, { once: true });
 window.addEventListener('keydown', unlockAudio, { once: true });
@@ -690,7 +1199,26 @@ function createMapCallbacks() {
   return {
     onHover: (f, e) => {
       if (isTouch || popover.classList.contains('show')) return;
-      showTooltip(f.properties.name, store.isLit(f.properties.adcode), e.clientX, e.clientY, true);
+      const adcode = String(f.properties.adcode);
+      const name = f.properties.name;
+
+      if (store.isPkMode()) {
+        const stats = store.getPkStats();
+        const p = stats.provinceMap[adcode];
+        const litMembers = p ? p.litMembers : [];
+
+        if (litMembers.length === 0) {
+          showTooltip(name, false, e.clientX, e.clientY, true, '全家尚未踏足', '点击为家庭开辟山河');
+        } else if (litMembers.length === 1) {
+          const m = litMembers[0];
+          showTooltip(name, true, e.clientX, e.clientY, true, `独占 · ${m.name}`, '专属足迹');
+        } else {
+          const names = litMembers.map((m) => m.name).join('、');
+          showTooltip(name, true, e.clientX, e.clientY, true, `✨ 合家欢 · ${names}`, `${litMembers.length}人同游`);
+        }
+      } else {
+        showTooltip(name, store.isLit(adcode), e.clientX, e.clientY, true);
+      }
     },
     onLeave: hideTooltip,
     onTap,
@@ -719,12 +1247,20 @@ function buildAll() {
   applyThemeVars(store.state.theme);
   renderThemeIcon();
   renderSoundBtn(store.state.soundEnabled);
+  renderMemberButton();
+  renderPkToggle();
   setAudioEnabled(store.state.soundEnabled);
   setParticlesTheme(store.state.theme);
   initParticles($('fx'));
   drawStars();
+
   mapApi = buildMainMap($('map'), provinces, createMapCallbacks(), store.state.theme);
-  mapApi.update((c) => store.isLit(c), (c) => store.isCityLit(c));
+  mapApi.update(
+    (c) => store.isLit(c),
+    (c) => store.isCityLit(c),
+    store.isPkMode() ? store.getPkStats() : null
+  );
+
   buildInset($('inset'), islandsFeature, store.state.theme);
   renderProgress(false);
 }
@@ -746,15 +1282,43 @@ async function init() {
 
   buildAll();
 
-  // 状态变化：普通点亮只更新点亮类名与进度，避免每次销毁重建静态插图
+  // 初始化同步层与离线容灾
+  initSync(store);
+  subscribeSyncStatus((status) => {
+    const indicator = $('family-sync-indicator');
+    if (!indicator) return;
+    indicator.className = `family-sync-indicator ${status}`;
+    if (status === 'syncing') indicator.textContent = '🔄 同步中…';
+    else if (status === 'saved') indicator.textContent = '🟢 已同步';
+    else if (status === 'offline') indicator.textContent = '⚪ 离线模式';
+    else indicator.textContent = '就绪';
+  });
+
+  // Store 状态订阅
   store.subscribe((s) => {
-    if (mapApi) mapApi.update((c) => store.isLit(c), (c) => store.isCityLit(c));
+    if (mapApi) {
+      mapApi.update(
+        (c) => store.isLit(c),
+        (c) => store.isCityLit(c),
+        store.isPkMode() ? store.getPkStats() : null
+      );
+    }
     renderProgress();
+    renderMemberButton();
+    renderPkToggle();
     renderSoundBtn(s.soundEnabled);
     setAudioEnabled(s.soundEnabled);
+
     if ($('gallery-modal').classList.contains('show')) {
       renderGallery();
     }
+    if ($('family-modal').classList.contains('show')) {
+      renderFamilyModal();
+    }
+    if ($('pk-modal').classList.contains('show')) {
+      renderPkModal();
+    }
+
     if (s.theme !== currentTheme) {
       currentTheme = s.theme;
       applyThemeVars(s.theme);
@@ -765,13 +1329,17 @@ async function init() {
     }
   });
 
-  // 尺寸变化 → 重建投影与粒子适配（防抖）
+  // 尺寸自适应防抖
   let rt = null;
   addEventListener('resize', () => {
     clearTimeout(rt);
     rt = setTimeout(() => {
       mapApi = buildMainMap($('map'), provinces, createMapCallbacks(), store.state.theme);
-      mapApi.update((c) => store.isLit(c), (c) => store.isCityLit(c));
+      mapApi.update(
+        (c) => store.isLit(c),
+        (c) => store.isCityLit(c),
+        store.isPkMode() ? store.getPkStats() : null
+      );
       if (currentDrill) {
         mapApi.drillDown(currentDrill.feature, currentDrill.cities, (c) => store.isCityLit(c));
       }

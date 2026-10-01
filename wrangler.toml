@@ -1,0 +1,7 @@
+name = "footprint-china-sync"
+main = "worker/index.js"
+compatibility_date = "2024-09-23"
+
+[[kv_namespaces]]
+binding = "ROOMS_KV"
+id = "b554cebe888e4ae19ce8a142c937b454"

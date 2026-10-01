@@ -3,7 +3,7 @@
  * 主地图：34 省 path；右下角：南海诸岛插图（真实岛礁数据 + 十段线示意）
  */
 import { geoMercator, geoPath, geoCentroid, geoBounds } from 'd3-geo';
-import { THEMES, LIT_GRADIENT, TEN_DASH_LINE, SMALL_REGION_HIT, HIT_CIRCLE_R } from './config.js?v=20260930e';
+import { THEMES, LIT_GRADIENT, TEN_DASH_LINE, SMALL_REGION_HIT, HIT_CIRCLE_R } from './config.js?v=20261001c';
 
 const NS = 'http://www.w3.org/2000/svg';
 const el = (tag, attrs = {}) => {
@@ -64,6 +64,14 @@ export function buildMainMap(svg, provinces, cbs, themeName = 'dark') {
   grad.appendChild(el('stop', { id: 'litStop0', offset: '0%', 'stop-color': g0 }));
   grad.appendChild(el('stop', { id: 'litStop1', offset: '100%', 'stop-color': g1 }));
   defs.appendChild(grad);
+
+  // 金紫交辉渐变（合家欢特制高亮）
+  const familyGrad = el('radialGradient', { id: 'pkGradFamily', cx: '50%', cy: '42%', r: '80%' });
+  familyGrad.appendChild(el('stop', { offset: '0%', 'stop-color': '#FDE047' }));
+  familyGrad.appendChild(el('stop', { offset: '45%', 'stop-color': '#F59E0B' }));
+  familyGrad.appendChild(el('stop', { offset: '100%', 'stop-color': '#9333EA' }));
+  defs.appendChild(familyGrad);
+
   svg.appendChild(defs);
 
   const fc = { type: 'FeatureCollection', features: provinces };
@@ -264,14 +272,48 @@ export function buildMainMap(svg, provinces, cbs, themeName = 'dark') {
   }
 
   return {
-    /** 按 store 状态刷新点亮 class 与无障碍状态 */
-    update(isLit, isCityLit) {
-      for (const [adcode, g] of groups) {
-        const lit = isLit(adcode);
-        g.classList.toggle('lit', lit);
-        const name = g.getAttribute('data-name') || '';
-        g.setAttribute('aria-label', `${name}，${lit ? '已点亮' : '未点亮'}`);
-        g.setAttribute('aria-pressed', lit ? 'true' : 'false');
+    /** 按 store 状态刷新点亮 class 与无障碍状态（支持普通单人与 PK 透视模式） */
+    update(isLit, isCityLit, pkStats = null) {
+      if (pkStats && pkStats.provinceMap) {
+        // PK 透视模式渲染
+        for (const [adcode, g] of groups) {
+          const p = pkStats.provinceMap[adcode];
+          const name = g.getAttribute('data-name') || '';
+          const litMembers = p ? p.litMembers : [];
+
+          if (litMembers.length === 0) {
+            g.classList.remove('lit', 'pk-solo', 'pk-family');
+            g.style.removeProperty('--pk-color');
+            g.setAttribute('aria-label', `${name}，全家未点亮`);
+            g.setAttribute('aria-pressed', 'false');
+          } else if (litMembers.length === 1) {
+            const owner = litMembers[0];
+            g.classList.add('lit', 'pk-solo');
+            g.classList.remove('pk-family');
+            g.style.setProperty('--pk-color', owner.color);
+            g.setAttribute('aria-label', `${name}，${owner.name}独占点亮`);
+            g.setAttribute('aria-pressed', 'true');
+          } else {
+            // >= 2 人：合家欢
+            g.classList.add('lit', 'pk-family');
+            g.classList.remove('pk-solo');
+            g.style.removeProperty('--pk-color');
+            const names = litMembers.map((m) => m.name).join('、');
+            g.setAttribute('aria-label', `${name}，合家欢（${names}共同点亮）`);
+            g.setAttribute('aria-pressed', 'true');
+          }
+        }
+      } else {
+        // 普通单人模式渲染
+        for (const [adcode, g] of groups) {
+          const lit = isLit(adcode);
+          g.classList.toggle('lit', lit);
+          g.classList.remove('pk-solo', 'pk-family');
+          g.style.removeProperty('--pk-color');
+          const name = g.getAttribute('data-name') || '';
+          g.setAttribute('aria-label', `${name}，${lit ? '已点亮' : '未点亮'}`);
+          g.setAttribute('aria-pressed', lit ? 'true' : 'false');
+        }
       }
       if (cityLayer && isCityLit) {
         for (const [cadcode, cg] of cityGroups) {

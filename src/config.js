@@ -5,6 +5,26 @@
 
 export const STORE_KEY = 'footprint_china_v1_store';
 export const TOTAL_PROVINCES = 34;
+export const MAX_MEMBERS = 4;
+export const SYNC_DEBOUNCE_MS = 2000;
+
+/** 家庭成员 4 人新中式配色 */
+export const MEMBER_COLORS = [
+  { name: '鎏金', value: '#C9A25E', glow: 'rgba(201, 162, 94, 0.55)', lightStroke: '#E6C98A' },
+  { name: '青瓷', value: '#7FB3A3', glow: 'rgba(127, 179, 163, 0.55)', lightStroke: '#A6D5C7' },
+  { name: '朱砂', value: '#C4574E', glow: 'rgba(196, 87, 78, 0.55)', lightStroke: '#E8857D' },
+  { name: '黛蓝', value: '#5B7FA6', glow: 'rgba(91, 127, 166, 0.55)', lightStroke: '#88A9CE' },
+];
+
+/** 合家欢（多人点亮）金紫交辉配色 */
+export const FAMILY_GLOW = {
+  stroke: '#FAD961',
+  glow: 'rgba(168, 85, 247, 0.65)',
+  gradient: ['#F59E0B', '#A855F7'],
+};
+
+/** 同步 Worker API 端点基址（本地开发或部署域名） */
+export const SYNC_API_BASE = '';
 
 /** 十段线示意坐标（南海诸岛插图用，U 形走向：台湾以东 → 菲律宾以西 → 南沙以南 → 越南以东 → 粤琼以南） */
 export const TEN_DASH_LINE = [
