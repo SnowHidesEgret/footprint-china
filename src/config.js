@@ -24,7 +24,7 @@ export const FAMILY_GLOW = {
 };
 
 /** 同步 Worker API 端点基址（本地开发或部署域名） */
-export const SYNC_API_BASE = '';
+export const SYNC_API_BASE = 'https://sync.snowyegret.top';
 
 /** 十段线示意坐标（南海诸岛插图用，U 形走向：台湾以东 → 菲律宾以西 → 南沙以南 → 越南以东 → 粤琼以南） */
 export const TEN_DASH_LINE = [
