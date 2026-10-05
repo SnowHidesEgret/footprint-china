@@ -2025,3 +2025,240 @@ html, body {
   }
 }
 
+
+/* ========== Phase 4 · 5A 胜迹模式 ========== */
+
+/* 双模式分段切换（位于进度胶囊下方） */
+.mode-switch {
+  position: fixed;
+  top: max(68px, calc(60px + env(safe-area-inset-top)));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  display: flex;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--capsule-bg);
+  border: 1px solid var(--capsule-border);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 4px 16px -2px rgba(0,0,0,.22);
+}
+.mode-switch button {
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 13px;
+  letter-spacing: .04em;
+  padding: 7px 16px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all .2s ease;
+  font-family: inherit;
+  white-space: nowrap;
+}
+.mode-switch button.active {
+  background: linear-gradient(135deg, #C9A25E, #9E7A38);
+  color: #1a1005;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(201, 162, 94, 0.35);
+}
+
+/* 5A 模式：底图变暗，突出星点（只 dim 省份层，散点层保持明亮） */
+body.spot-mode .prov-layer {
+  opacity: 0.32;
+  transition: opacity .45s ease;
+}
+.prov-layer {
+  transition: opacity .45s ease;
+}
+body.spot-mode .prov-layer .prov {
+  pointer-events: auto; /* 仍可点击省份以下钻散点 */
+}
+body.spot-mode #inset-wrap {
+  opacity: 0.35;
+}
+
+/* 5A 散点层 */
+.spot-layer {
+  pointer-events: none;
+}
+.spot-layer g {
+  pointer-events: auto;
+  cursor: pointer;
+}
+.spot-layer g:focus {
+  outline: none;
+}
+.spot-layer g:focus-visible .spot-dot,
+.spot-layer g:focus-visible .cluster-bg {
+  stroke: #fff;
+  stroke-width: 1.5;
+}
+/* 单点：双圆光晕（无滤镜） */
+.spot .spot-halo {
+  fill: rgba(153, 153, 153, 0.18);
+}
+.spot .spot-dot {
+  fill: #999;
+  stroke: rgba(255, 255, 255, 0.35);
+  stroke-width: 1;
+}
+.spot.visited .spot-halo {
+  fill: rgba(201, 162, 94, 0.22);
+}
+.spot.visited .spot-dot {
+  stroke: #FFE4B5;
+  stroke-width: 1.5;
+  filter: drop-shadow(0 0 4px rgba(201, 162, 94, 0.8));
+}
+/* 省级聚合气泡 */
+.cluster-bg {
+  fill: rgba(12, 18, 32, 0.82);
+  stroke: rgba(201, 162, 94, 0.55);
+  stroke-width: 1.5;
+}
+.cluster.done .cluster-bg {
+  fill: rgba(201, 162, 94, 0.28);
+  stroke: #FFE4B5;
+}
+.cluster-num {
+  fill: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+/* 底部卡片（5A 景点 / 城市 5A 列表共用） */
+.bottom-card {
+  position: fixed;
+  left: 50%;
+  bottom: max(18px, calc(12px + env(safe-area-inset-bottom)));
+  transform: translateX(-50%) translateY(24px);
+  z-index: 60;
+  width: min(480px, calc(100vw - 32px));
+  max-height: 46vh;
+  overflow-y: auto;
+  padding: 16px 18px 18px;
+  border-radius: 16px;
+  background: var(--tooltip-bg);
+  border: 1px solid var(--capsule-border);
+  box-shadow: 0 12px 40px -8px rgba(0,0,0,.5);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .28s ease, transform .32s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.bottom-card.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  pointer-events: auto;
+}
+.bottom-card h3 {
+  margin: 0 28px 6px 0;
+  font-size: 16px;
+  letter-spacing: .03em;
+  color: var(--text);
+}
+.bottom-card-meta {
+  margin: 0 0 12px;
+  font-size: 12.5px;
+  color: var(--text-dim);
+  letter-spacing: .04em;
+}
+.bottom-card-close {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  width: 30px;
+  height: 30px;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 50%;
+}
+.bottom-card-close:hover {
+  color: var(--text);
+  background: rgba(255,255,255,.08);
+}
+.spot-visit-btn {
+  width: 100%;
+  padding: 10px;
+  font-size: 14px;
+}
+.spot-visit-btn.visited {
+  background: rgba(201, 162, 94, 0.18);
+  color: var(--lit-stroke);
+  border: 1px solid var(--capsule-border);
+}
+
+/* 城市 5A 列表 */
+.city-spots-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.city-spot-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(255,255,255,.03);
+  border: 1px solid rgba(148,163,184,.12);
+}
+.city-spot-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #666;
+}
+.city-spot-name {
+  flex: 1;
+  font-size: 13.5px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.city-spot-cat {
+  flex: none;
+  font-size: 11px;
+  color: var(--text-dim);
+  border: 1px solid var(--capsule-border);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+.city-spot-btn {
+  flex: none;
+  border: 1px solid var(--capsule-border);
+  background: transparent;
+  color: var(--lit-stroke);
+  border-radius: 8px;
+  padding: 5px 12px;
+  font-size: 12.5px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.city-spot-btn.visited {
+  color: var(--text-dim);
+  border-color: rgba(148,163,184,.25);
+}
+
+@media (max-width: 640px) {
+  .mode-switch {
+    top: max(112px, calc(104px + env(safe-area-inset-top)));
+  }
+  .mode-switch button {
+    font-size: 12px;
+    padding: 6px 12px;
+  }
+}
