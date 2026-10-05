@@ -247,7 +247,7 @@ html, body {
   position: fixed;
   top: max(84px, calc(72px + env(safe-area-inset-top)));
   left: max(26px, calc(16px + env(safe-area-inset-left)));
-  z-index: 15;
+  z-index: 35;
   display: flex;
   align-items: center;
   gap: 6px;

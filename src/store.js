@@ -2,10 +2,10 @@
  * 点亮中国 · 状态管理（单向 Store，支持 Phase 3 多用户与云同步）
  * 本地多成员隔离 + 老数据平滑迁移 + 离线缓存
  */
-import { TOTAL_PROVINCES, MAX_MEMBERS, MEMBER_COLORS } from './config.js?v=20261005c';
-import { storage } from './geo.js?v=20261005c';
-import { KNOWN_ACHIEVEMENTS } from './achievements.js?v=20261005c';
-import { spotKey } from './spots.js?v=20261005c';
+import { TOTAL_PROVINCES, MAX_MEMBERS, MEMBER_COLORS } from './config.js?v=20261005d';
+import { storage } from './geo.js?v=20261005d';
+import { KNOWN_ACHIEVEMENTS } from './achievements.js?v=20261005d';
+import { spotKey } from './spots.js?v=20261005d';
 
 const VALID_THEMES = ['dark', 'light'];
 
