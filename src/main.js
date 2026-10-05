@@ -2,12 +2,12 @@
  * 点亮中国 · 入口：组装地图 / 状态 / 视听反馈与交互
  * 包含 Phase 2（音效/粒子/成就/城市下钻/称号/主题）与 Phase 3（多用户云同步/PK透视对战）
  */
-import { TOTAL_PROVINCES, MAX_MEMBERS, MEMBER_COLORS } from './config.js?v=20261005d';
-import { loadGeo, loadCityGeo, isCityGeoLoaded, getLoadedCityGeo } from './geo.js?v=20261005d';
-import { store } from './store.js?v=20261005d';
-import { buildMainMap, buildInset, applyThemeVars } from './map.js?v=20261005d';
-import { ensureCtx, setEnabled as setAudioEnabled, playLight, playUnlight, playAchievement } from './audio.js?v=20261005d';
-import { initParticles, burst as burstParticles, confetti as confettiParticles, setParticlesTheme, resizeParticles } from './particles.js?v=20261005d';
+import { TOTAL_PROVINCES, MAX_MEMBERS, MEMBER_COLORS } from './config.js?v=20261005e';
+import { loadGeo, loadCityGeo, isCityGeoLoaded, getLoadedCityGeo } from './geo.js?v=20261005e';
+import { store } from './store.js?v=20261005e';
+import { buildMainMap, buildInset, applyThemeVars } from './map.js?v=20261005e';
+import { ensureCtx, setEnabled as setAudioEnabled, playLight, playUnlight, playAchievement } from './audio.js?v=20261005e';
+import { initParticles, burst as burstParticles, confetti as confettiParticles, setParticlesTheme, resizeParticles } from './particles.js?v=20261005e';
 import {
   TITLES,
   ACHIEVEMENTS,
@@ -15,7 +15,7 @@ import {
   initProvinceAdcodes,
   getAdcode,
   checkAchievements,
-} from './achievements.js?v=20261005d';
+} from './achievements.js?v=20261005e';
 import {
   loadSpots,
   getSpotTotal,
@@ -24,7 +24,7 @@ import {
   getSpotTitleByCount,
   SPOT_TITLES,
   CAT_LABELS,
-} from './spots.js?v=20261005d';
+} from './spots.js?v=20261005e';
 import {
   initSync,
   createRoom,
@@ -33,7 +33,7 @@ import {
   putMember as putRemoteMember,
   deleteMember as deleteRemoteMember,
   subscribeSyncStatus,
-} from './sync.js?v=20261005d';
+} from './sync.js?v=20261005e';
 
 const $ = (id) => document.getElementById(id);
 const isTouch = matchMedia('(pointer: coarse)').matches;
@@ -64,6 +64,7 @@ let spotMode = false;          // false=省市足迹，true=5A胜迹
 let spotsData = [];            // 5A 数据集
 let spotDrill = null;          // { adcode, name } 省级下钻（散开单点）
 let spotLayerEl = null;        // SVG 散点层 <g>
+const centroidCache = new Map(); // 省 adcode → [lng, lat]，避免每次渲染重复遍历多边形坐标
 let activeSpotId = null;       // 底部卡片当前展示的 5A id
 const firedSpotThresholds = new Set(); // 名胜行者称号 toast 去重（会话级）
 
@@ -269,8 +270,13 @@ function renderSpotLayer() {
       let cx = 0, cy = 0;
       try {
         const pt = project([list[0].lng, list[0].lat]);
-        // 用该省第一个点的投影估算大致中心；更准用 centroid
-        const c = project(approxCentroidOf(f));
+        // 省几何中心只算一次并缓存（多边形坐标遍历较重）
+        let center = centroidCache.get(adcode);
+        if (!center) {
+          center = approxCentroidOf(f);
+          if (center) centroidCache.set(adcode, center);
+        }
+        const c = center ? project(center) : null;
         if (c && !isNaN(c[0])) { cx = c[0]; cy = c[1]; }
         else if (pt) { cx = pt[0]; cy = pt[1]; }
       } catch { continue; }
