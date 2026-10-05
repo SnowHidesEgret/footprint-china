@@ -4,32 +4,65 @@
 
 **在线访问**：https://map.snowyegret.top
 
-## 功能（第一期 MVP）
+## 功能
 
-- 全国 34 个省级行政区 SVG 地图（含南海诸岛十段线插图）
+### 第一期 MVP（2026-09-29）
+- 全国 34 个省级行政区 SVG 地图（含南海诸岛插图）
 - 点击点亮 / 再次点击熄灭（防误触确认）
 - 顶部进度胶囊：已点亮 x/34 + 百分比
 - localStorage 本地持久化，刷新不丢失
 - 深色 / 浅色双主题，移动端适配
+
+### 第二期：视听与成就（2026-09-30）
+- Web Audio 音效引擎：点亮水滴音、熄灭音、成就琶音，Combo 连击时半音爬升；右上角静音开关（localStorage 持久化）
+- Canvas 金色粒子爆裂（点亮瞬间），进度阈值 10/25/50/75/100% 全屏礼花
+- Combo xN 连击徽记
+- 8 级山河称号（初见山海 → 山河大满贯）
+- 12 个特色成就 + 成就墙陈列室（如集齐边疆省份、岛屿、火锅省份等）
+- 地级市下钻：双击省份或点"探索城市"进入，面包屑导航，ESC 返回；
+  34 省城市 GeoJSON 本地化于 `maps/cities/`（共 3.8MB）；
+  城市点亮独立持久化，**不计入省级 x/34**
+
+### 第三期：家庭多成员 + 云同步 + PK（2026-10-02）
+- 家庭多成员档案：新建 / 切换 / 删除 / ✎ 行内改名（回车保存、ESC 取消），最多 6 人，
+  6 款新中式配色自选（墨 / 朱砂 / 赭石 / 绛紫等）
+- 6 位房间码加入家庭房间，多人共享一份地图
+- 云同步：Cloudflare Worker（`footprint-china-sync`）+ KV（`ROOMS_KV`），
+  2 秒防抖自动 PUT 同步，打开 / 加入时拉取全家数据，无网络时静默降级（只本地存）
+- PK 透视对战面板：成员间点亮版图对比
+
+### 修复（2026-10-05）
+- 城市无法取消点亮：`onCityTap` 误用未定义变量 `adcode`（应为 `cadcode`），严格模式下抛错导致熄灭确认气泡弹不出（v=20261005a）
+- 成员卡片加改名按钮，成员上限 4 人 → 6 人，新增"绛紫""赭石"两款配色（v=20261005b）
 
 ## 技术
 
 原生 HTML + CSS + JavaScript，**零构建**（无 npm、无打包），直接部署到 Cloudflare Pages。
 
 - 地图渲染：原生 SVG + [d3-geo](https://github.com/d3/d3-geo)（ESM CDN）
-- 地图数据：阿里云 DataV GeoAtlas（已打包至 `maps/china.json`，十段线为示意绘制）
-- 状态：`src/store.js` 单向 Store → localStorage（键名 `footprint_china_v1_store`）
+- 地图数据：阿里云 DataV GeoAtlas（打包至 `maps/china.json`）；城市数据：34 省地级市 GeoJSON（打包至 `maps/cities/`）
+- 状态：`src/store.js` 单向 Store → localStorage（本机多成员隔离，老数据平滑迁移）
+- 云同步服务端：`worker/index.js`（Cloudflare Worker + KV）
 
 ```
 ├── index.html          页面骨架
 ├── styles.css          样式（含双主题 CSS 变量）
 ├── src/
-│   ├── config.js       色值 / 常量（设计稿色值固化于此）
+│   ├── config.js       色值 / 常量（新中式墨色/宣纸/朱砂/鎏金配色、6 人成员配色）
 │   ├── geo.js          GeoJSON 加载 + storage 读写
-│   ├── store.js        单向状态管理
+│   ├── store.js        单向状态管理（支持多用户与云同步）
 │   ├── map.js          SVG 地图渲染 + 南海诸岛插图
+│   ├── audio.js        Web Audio 音效引擎（零依赖）
+│   ├── particles.js    Canvas 粒子引擎（零依赖）
+│   ├── achievements.js 成就与称号系统（8 称号 / 12 成就）
+│   ├── sync.js         云同步客户端（防抖 PUT + 离线容灾）
 │   └── main.js         入口：组装与交互
-├── maps/china.json     全国省级 GeoJSON（DataV）
+├── maps/
+│   ├── china.json      全国省级 GeoJSON（DataV）
+│   └── cities/         34 省地级市 GeoJSON（本地化，约 3.8MB）
+├── worker/
+│   └── index.js        云同步 Worker（房间 / 成员足迹 API）
+├── wrangler.toml       Worker 配置（KV 绑定 ROOMS_KV）
 ├── _headers            Cloudflare 缓存头
 └── _redirects          SPA 回退
 ```
@@ -44,6 +77,19 @@ python3 -m http.server 8000
 ## 部署
 
 推送到 GitHub 后，Cloudflare Pages 自动从仓库构建部署（无需构建命令，输出目录为 `/`）。
+
+⚠️ **缓存约定（每次改 JS/CSS 必须遵守）**：入口资源（`styles.css`、`src/main.js` 等）在 `index.html`
+中用 `?v=YYYYMMDDx` 手工打版本号，每次改动后必须 bump，否则用户浏览器 24 小时缓存旧文件。
+`_headers` 对 `/src/*`、`/styles.css`、`/maps/*` 用 `Cache-Control: no-cache`（靠 ETag 304），只给 `/` 300 秒。
+
+## 云同步配置
+
+- Worker 脚本名：`footprint-china-sync`，KV 命名空间绑定名 `ROOMS_KV`
+- **注意**：该 Cloudflare 账号的 workers.dev 对所有 Worker 返回 1042（平台侧路由问题），
+  已改用自定义域名 `sync.snowyegret.top`（Worker 路由 + 代理 A 记录）；
+  `src/config.js` 的 `SYNC_API_BASE` 指向 `https://sync.snowyegret.top`
+- Cloudflare API Token 权限有限（不能创建 Pages 项目 / 绑域名 / 自助提权），
+  相关操作需在 Cloudflare 后台手动完成
 
 ## 设计文档
 
