@@ -1493,6 +1493,23 @@ html, body {
 .btn-danger-sm:hover {
   background: rgba(239, 68, 68, 0.15);
 }
+.btn-rename-member {
+  padding: 6px 9px;
+  margin-right: 6px;
+}
+.member-rename-input {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 14px;
+  padding: 3px 8px;
+  width: 110px;
+  outline: none;
+}
+.member-rename-input:focus {
+  border-color: var(--gold, #C9A25E);
+}
 
 /* 家庭与成员管理浮层 */
 .family-sheet, .pk-sheet {

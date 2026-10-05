@@ -2,12 +2,12 @@
  * 点亮中国 · 入口：组装地图 / 状态 / 视听反馈与交互
  * 包含 Phase 2（音效/粒子/成就/城市下钻/称号/主题）与 Phase 3（多用户云同步/PK透视对战）
  */
-import { TOTAL_PROVINCES, MAX_MEMBERS, MEMBER_COLORS } from './config.js?v=20261005a';
-import { loadGeo, loadCityGeo, isCityGeoLoaded, getLoadedCityGeo } from './geo.js?v=20261005a';
-import { store } from './store.js?v=20261005a';
-import { buildMainMap, buildInset, applyThemeVars } from './map.js?v=20261005a';
-import { ensureCtx, setEnabled as setAudioEnabled, playLight, playUnlight, playAchievement } from './audio.js?v=20261005a';
-import { initParticles, burst as burstParticles, confetti as confettiParticles, setParticlesTheme, resizeParticles } from './particles.js?v=20261005a';
+import { TOTAL_PROVINCES, MAX_MEMBERS, MEMBER_COLORS } from './config.js?v=20261005b';
+import { loadGeo, loadCityGeo, isCityGeoLoaded, getLoadedCityGeo } from './geo.js?v=20261005b';
+import { store } from './store.js?v=20261005b';
+import { buildMainMap, buildInset, applyThemeVars } from './map.js?v=20261005b';
+import { ensureCtx, setEnabled as setAudioEnabled, playLight, playUnlight, playAchievement } from './audio.js?v=20261005b';
+import { initParticles, burst as burstParticles, confetti as confettiParticles, setParticlesTheme, resizeParticles } from './particles.js?v=20261005b';
 import {
   TITLES,
   ACHIEVEMENTS,
@@ -15,15 +15,16 @@ import {
   initProvinceAdcodes,
   getAdcode,
   checkAchievements,
-} from './achievements.js?v=20261005a';
+} from './achievements.js?v=20261005b';
 import {
   initSync,
   createRoom,
   joinRoom,
   fetchRoom,
+  putMember as putRemoteMember,
   deleteMember as deleteRemoteMember,
   subscribeSyncStatus,
-} from './sync.js?v=20261005a';
+} from './sync.js?v=20261005b';
 
 const $ = (id) => document.getElementById(id);
 const isTouch = matchMedia('(pointer: coarse)').matches;
@@ -747,6 +748,7 @@ function renderFamilyModal() {
       </div>
       <div class="member-card-right">
         ${!isCurrent ? `<button class="btn-subtle btn-switch-member" data-id="${m.id}" type="button">切换</button>` : ''}
+        <button class="btn-subtle btn-rename-member" data-id="${m.id}" type="button" title="改名">✎</button>
         ${members.length > 1 ? `<button class="btn-danger-sm btn-del-member" data-id="${m.id}" data-name="${m.name}" type="button" title="删除成员">&times;</button>` : ''}
       </div>
     `;
@@ -761,6 +763,59 @@ function renderFamilyModal() {
       store.setCurrentMember(id);
       renderFamilyModal();
       toast(`已切换为 <b>${store.getCurrentMember().name}</b>`);
+    });
+  });
+
+  // 绑定改名成员（行内编辑：回车/失焦保存，ESC 取消）
+  memberListEl.querySelectorAll('.btn-rename-member').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = btn.getAttribute('data-id');
+      const card = btn.closest('.member-card');
+      if (!card || card.querySelector('.member-rename-input')) return;
+      const member = store.getMembers().find((x) => x.id === id);
+      if (!member) return;
+      const nameSpan = card.querySelector('.member-card-name');
+      const tag = nameSpan ? nameSpan.querySelector('.member-card-tag') : null;
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.maxLength = 10;
+      input.value = member.name;
+      input.className = 'member-rename-input';
+      input.setAttribute('aria-label', '修改成员名称');
+      if (nameSpan) {
+        nameSpan.textContent = '';
+        nameSpan.appendChild(input);
+        if (tag) nameSpan.appendChild(tag);
+      }
+      input.focus();
+      input.select();
+      let done = false;
+      const finish = (save) => {
+        if (done) return;
+        done = true;
+        if (save) {
+          const newName = input.value.trim().slice(0, 10);
+          if (newName && newName !== member.name) {
+            store.updateMember(id, { name: newName });
+            const rc = store.getRoomCode();
+            if (rc) {
+              const m2 = store.getMembers().find((x) => x.id === id);
+              if (m2) putRemoteMember(rc, id, { name: m2.name, color: m2.color, footprint: m2.footprint }).catch(() => {});
+            }
+            renderMemberButton();
+            toast(`已改名为 <b>${newName}</b>`);
+          }
+        }
+        renderFamilyModal();
+      };
+      input.addEventListener('keydown', (ev) => {
+        ev.stopPropagation();
+        if (ev.key === 'Enter') finish(true);
+        else if (ev.key === 'Escape') finish(false);
+      });
+      input.addEventListener('blur', () => finish(true));
+      input.addEventListener('click', (ev) => ev.stopPropagation());
     });
   });
 
@@ -787,7 +842,7 @@ function renderFamilyModal() {
   const addForm = $('add-member-form');
   if (members.length >= MAX_MEMBERS) {
     addToggleBtn.disabled = true;
-    addToggleBtn.textContent = '已达4人上限';
+    addToggleBtn.textContent = '已达6人上限';
     addForm.style.display = 'none';
   } else {
     addToggleBtn.disabled = false;
@@ -877,7 +932,7 @@ $('confirm-add-member-btn').addEventListener('click', () => {
     renderFamilyModal();
     toast(`已添加家庭成员 <b>${newMember.name}</b>`);
   } else {
-    toast('家庭成员已满 4 人');
+    toast('家庭成员已满 6 人');
   }
 });
 
