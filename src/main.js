@@ -2,12 +2,12 @@
  * 点亮中国 · 入口：组装地图 / 状态 / 视听反馈与交互
  * 包含 Phase 2（音效/粒子/成就/城市下钻/称号/主题）与 Phase 3（多用户云同步/PK透视对战）
  */
-import { TOTAL_PROVINCES, MAX_MEMBERS, MEMBER_COLORS } from './config.js?v=20261001d';
-import { loadGeo, loadCityGeo, isCityGeoLoaded, getLoadedCityGeo } from './geo.js?v=20261001d';
-import { store } from './store.js?v=20261001d';
-import { buildMainMap, buildInset, applyThemeVars } from './map.js?v=20261001d';
-import { ensureCtx, setEnabled as setAudioEnabled, playLight, playUnlight, playAchievement } from './audio.js?v=20261001d';
-import { initParticles, burst as burstParticles, confetti as confettiParticles, setParticlesTheme, resizeParticles } from './particles.js?v=20261001d';
+import { TOTAL_PROVINCES, MAX_MEMBERS, MEMBER_COLORS } from './config.js?v=20261005a';
+import { loadGeo, loadCityGeo, isCityGeoLoaded, getLoadedCityGeo } from './geo.js?v=20261005a';
+import { store } from './store.js?v=20261005a';
+import { buildMainMap, buildInset, applyThemeVars } from './map.js?v=20261005a';
+import { ensureCtx, setEnabled as setAudioEnabled, playLight, playUnlight, playAchievement } from './audio.js?v=20261005a';
+import { initParticles, burst as burstParticles, confetti as confettiParticles, setParticlesTheme, resizeParticles } from './particles.js?v=20261005a';
 import {
   TITLES,
   ACHIEVEMENTS,
@@ -15,7 +15,7 @@ import {
   initProvinceAdcodes,
   getAdcode,
   checkAchievements,
-} from './achievements.js?v=20261001d';
+} from './achievements.js?v=20261005a';
 import {
   initSync,
   createRoom,
@@ -23,7 +23,7 @@ import {
   fetchRoom,
   deleteMember as deleteRemoteMember,
   subscribeSyncStatus,
-} from './sync.js?v=20261001d';
+} from './sync.js?v=20261005a';
 
 const $ = (id) => document.getElementById(id);
 const isTouch = matchMedia('(pointer: coarse)').matches;
@@ -410,7 +410,7 @@ function onCityTap(cf, svgX, svgY, clientX, clientY) {
   hideTooltip();
 
   if (store.isCityLit(cadcode)) {
-    pendingUnlight = { adcode, name: cname, isCity: true, feature: cf };
+    pendingUnlight = { adcode: cadcode, name: cname, isCity: true, feature: cf };
     showPopover(cname, clientX, clientY, true, cf);
   } else {
     hidePopover();

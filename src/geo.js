@@ -2,7 +2,7 @@
  * 点亮中国 · 地理数据层
  * 加载本地 GeoJSON，拆分为 34 个省级行政区 + 南海诸岛要素
  */
-import { STORE_KEY } from './config.js?v=20261001d';
+import { STORE_KEY } from './config.js?v=20261005a';
 
 const GEO_URL = 'maps/china.json';
 const ISLANDS_ADCODE = '100000_JD';
