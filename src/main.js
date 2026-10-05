@@ -2,12 +2,12 @@
  * 点亮中国 · 入口：组装地图 / 状态 / 视听反馈与交互
  * 包含 Phase 2（音效/粒子/成就/城市下钻/称号/主题）与 Phase 3（多用户云同步/PK透视对战）
  */
-import { TOTAL_PROVINCES, MAX_MEMBERS, MEMBER_COLORS } from './config.js?v=20261005e';
-import { loadGeo, loadCityGeo, isCityGeoLoaded, getLoadedCityGeo } from './geo.js?v=20261005e';
-import { store } from './store.js?v=20261005e';
-import { buildMainMap, buildInset, applyThemeVars } from './map.js?v=20261005e';
-import { ensureCtx, setEnabled as setAudioEnabled, playLight, playUnlight, playAchievement } from './audio.js?v=20261005e';
-import { initParticles, burst as burstParticles, confetti as confettiParticles, setParticlesTheme, resizeParticles } from './particles.js?v=20261005e';
+import { TOTAL_PROVINCES, MAX_MEMBERS, MEMBER_COLORS } from './config.js?v=20261005f';
+import { loadGeo, loadCityGeo, isCityGeoLoaded, getLoadedCityGeo } from './geo.js?v=20261005f';
+import { store } from './store.js?v=20261005f';
+import { buildMainMap, buildInset, applyThemeVars } from './map.js?v=20261005f';
+import { ensureCtx, setEnabled as setAudioEnabled, playLight, playUnlight, playAchievement } from './audio.js?v=20261005f';
+import { initParticles, burst as burstParticles, confetti as confettiParticles, setParticlesTheme, resizeParticles } from './particles.js?v=20261005f';
 import {
   TITLES,
   ACHIEVEMENTS,
@@ -15,7 +15,7 @@ import {
   initProvinceAdcodes,
   getAdcode,
   checkAchievements,
-} from './achievements.js?v=20261005e';
+} from './achievements.js?v=20261005f';
 import {
   loadSpots,
   getSpotTotal,
@@ -24,7 +24,7 @@ import {
   getSpotTitleByCount,
   SPOT_TITLES,
   CAT_LABELS,
-} from './spots.js?v=20261005e';
+} from './spots.js?v=20261005f';
 import {
   initSync,
   createRoom,
@@ -33,7 +33,7 @@ import {
   putMember as putRemoteMember,
   deleteMember as deleteRemoteMember,
   subscribeSyncStatus,
-} from './sync.js?v=20261005e';
+} from './sync.js?v=20261005f';
 
 const $ = (id) => document.getElementById(id);
 const isTouch = matchMedia('(pointer: coarse)').matches;
@@ -842,6 +842,19 @@ function onCityTap(cf, svgX, svgY, clientX, clientY) {
 
     handleAchievementChecks();
   }
+}
+
+/** 双击城市：已点亮且有 5A 景区 → 弹出 5A 选择卡（双击的两次单击会先触发熄灭气泡，这里关掉它） */
+function onCityDblTap(cf) {
+  const cadcode = String(cf.properties.adcode);
+  const cname = cf.properties.name;
+  if (!store.isCityLit(cadcode)) return;
+  if (spotsData.length === 0) return;
+  const citySpots = getSpotsByCity(cadcode);
+  if (citySpots.length === 0) return;
+  hidePopover();
+  pendingUnlight = null;
+  showCitySpotsCard(cname, cadcode);
 }
 
 /* ---------- 成就解锁弹窗队列 ---------- */
@@ -1711,6 +1724,9 @@ function createMapCallbacks() {
     },
     onCityLeave: hideTooltip,
     onCityTap,
+    // 双击已点亮的城市：若有 5A 景区，弹出 5A 选择卡（方便之前点亮过的城市补打卡）
+    onCityDblClick: (cf) => onCityDblTap(cf),
+    onCityDblTap: (cf) => onCityDblTap(cf),
     onBackgroundClick: () => {
       if (popover.classList.contains('show')) {
         hidePopover();

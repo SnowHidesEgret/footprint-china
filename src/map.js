@@ -3,7 +3,7 @@
  * 主地图：34 省 path；右下角：南海诸岛插图（真实岛礁数据 + 十段线示意）
  */
 import { geoMercator, geoPath, geoCentroid, geoBounds } from 'd3-geo';
-import { THEMES, LIT_GRADIENT, TEN_DASH_LINE, SMALL_REGION_HIT, HIT_CIRCLE_R } from './config.js?v=20261005e';
+import { THEMES, LIT_GRADIENT, TEN_DASH_LINE, SMALL_REGION_HIT, HIT_CIRCLE_R } from './config.js?v=20261005f';
 
 const NS = 'http://www.w3.org/2000/svg';
 const el = (tag, attrs = {}) => {
@@ -46,7 +46,7 @@ function easeOutCubic(t) {
  * 构建主地图
  * @param {SVGSVGElement} svg
  * @param {Array} provinces GeoJSON features
- * @param {Object} cbs { onHover, onLeave, onTap, onDblClick, onDblTap, onCityHover, onCityLeave, onCityTap, onBackgroundClick }
+ * @param {Object} cbs { onHover, onLeave, onTap, onDblClick, onDblTap, onCityHover, onCityLeave, onCityTap, onCityDblClick, onCityDblTap, onBackgroundClick }
  * @param {string} themeName 当前主题名
  */
 export function buildMainMap(svg, provinces, cbs, themeName = 'dark') {
@@ -407,6 +407,25 @@ export function buildMainMap(svg, provinces, cbs, themeName = 'dark') {
           const pt = svgPoint(svg, e);
           if (cbs.onCityTap) cbs.onCityTap(cf, pt.x, pt.y, e.clientX, e.clientY);
         });
+
+        // 城市双击：桌面端 dblclick
+        cg.addEventListener('dblclick', (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          if (cbs.onCityDblClick) cbs.onCityDblClick(cf, e);
+        });
+
+        // 城市双击：移动端 300ms 双击识别
+        let lastCityTouchEndTime = 0;
+        cg.addEventListener('touchend', (e) => {
+          const now = Date.now();
+          if (now - lastCityTouchEndTime <= 300) {
+            lastCityTouchEndTime = 0;
+            if (cbs.onCityDblTap) cbs.onCityDblTap(cf, e);
+          } else {
+            lastCityTouchEndTime = now;
+          }
+        }, { passive: true });
 
         cg.addEventListener('keydown', (e) => {
           if (e.key === 'Enter' || e.key === ' ' || e.code === 'Space') {
