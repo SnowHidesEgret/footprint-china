@@ -7,7 +7,7 @@
 <meta name="description" content="交互式中国地图足迹：点击你去过的省份，点亮属于你的山河版图。">
 <meta name="theme-color" content="#080c16">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗺️</text></svg>">
-<link rel="stylesheet" href="styles.css?v=20261005b">
+<link rel="stylesheet" href="styles.css?v=20261005c">
 <script type="importmap">
 { "imports": { "d3-geo": "https://esm.sh/d3-geo@3.1.1" } }
 </script>
@@ -25,6 +25,12 @@
 <div class="brand">
   <h1>点亮中国</h1>
   <p>点亮你走过的每一寸山河</p>
+</div>
+
+<!-- 双模式切换：省市足迹 ⇄ 5A 胜迹 -->
+<div class="mode-switch" id="mode-switch" role="group" aria-label="模式切换">
+  <button type="button" data-mode="provinces" class="active" aria-pressed="true">🗺️ 省市足迹</button>
+  <button type="button" data-mode="spots" aria-pressed="false">🏛️ 5A 胜迹</button>
 </div>
 
 <div class="progress-capsule" id="capsule" aria-live="polite">
@@ -97,6 +103,21 @@
 
 <div id="toast" role="status" aria-live="polite"></div>
 
+<!-- 5A 景点底部卡片 -->
+<div id="spot-card" class="bottom-card" role="dialog" aria-modal="false" aria-labelledby="spot-card-name" aria-hidden="true">
+  <button class="bottom-card-close" id="spot-card-close" type="button" aria-label="关闭">&times;</button>
+  <h3 id="spot-card-name"></h3>
+  <p class="bottom-card-meta" id="spot-card-meta"></p>
+  <button class="btn-primary spot-visit-btn" id="spot-card-visit" type="button">✦ 打卡</button>
+</div>
+
+<!-- 点亮城市时的 5A 列表卡片 -->
+<div id="city-spots-card" class="bottom-card" role="dialog" aria-modal="false" aria-labelledby="city-spots-title" aria-hidden="true">
+  <button class="bottom-card-close" id="city-spots-close" type="button" aria-label="关闭">&times;</button>
+  <h3 id="city-spots-title"></h3>
+  <ul class="city-spots-list" id="city-spots-list"></ul>
+</div>
+
 <!-- 成就解锁中央弹窗 -->
 <div id="unlock-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="unlock-title" style="display:none">
   <div class="modal-card unlock-card">
@@ -127,6 +148,10 @@
       <section class="gallery-section">
         <h3 class="section-title">十二特色成就</h3>
         <div class="achieve-grid" id="gallery-achieve-list"></div>
+      </section>
+      <section class="gallery-section">
+        <h3 class="section-title">🏛️ 名胜行者（5A 打卡）</h3>
+        <div class="title-list" id="gallery-spot-title-list"></div>
       </section>
     </div>
   </div>
@@ -212,6 +237,6 @@
   </div>
 </div>
 
-<script type="module" src="src/main.js?v=20261005b"></script>
+<script type="module" src="src/main.js?v=20261005c"></script>
 </body>
 </html>

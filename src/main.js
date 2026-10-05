@@ -2,12 +2,12 @@
  * 点亮中国 · 入口：组装地图 / 状态 / 视听反馈与交互
  * 包含 Phase 2（音效/粒子/成就/城市下钻/称号/主题）与 Phase 3（多用户云同步/PK透视对战）
  */
-import { TOTAL_PROVINCES, MAX_MEMBERS, MEMBER_COLORS } from './config.js?v=20261005b';
-import { loadGeo, loadCityGeo, isCityGeoLoaded, getLoadedCityGeo } from './geo.js?v=20261005b';
-import { store } from './store.js?v=20261005b';
-import { buildMainMap, buildInset, applyThemeVars } from './map.js?v=20261005b';
-import { ensureCtx, setEnabled as setAudioEnabled, playLight, playUnlight, playAchievement } from './audio.js?v=20261005b';
-import { initParticles, burst as burstParticles, confetti as confettiParticles, setParticlesTheme, resizeParticles } from './particles.js?v=20261005b';
+import { TOTAL_PROVINCES, MAX_MEMBERS, MEMBER_COLORS } from './config.js?v=20261005c';
+import { loadGeo, loadCityGeo, isCityGeoLoaded, getLoadedCityGeo } from './geo.js?v=20261005c';
+import { store } from './store.js?v=20261005c';
+import { buildMainMap, buildInset, applyThemeVars } from './map.js?v=20261005c';
+import { ensureCtx, setEnabled as setAudioEnabled, playLight, playUnlight, playAchievement } from './audio.js?v=20261005c';
+import { initParticles, burst as burstParticles, confetti as confettiParticles, setParticlesTheme, resizeParticles } from './particles.js?v=20261005c';
 import {
   TITLES,
   ACHIEVEMENTS,
@@ -15,7 +15,16 @@ import {
   initProvinceAdcodes,
   getAdcode,
   checkAchievements,
-} from './achievements.js?v=20261005b';
+} from './achievements.js?v=20261005c';
+import {
+  loadSpots,
+  getSpotTotal,
+  getSpotsByProvince,
+  getSpotsByCity,
+  getSpotTitleByCount,
+  SPOT_TITLES,
+  CAT_LABELS,
+} from './spots.js?v=20261005c';
 import {
   initSync,
   createRoom,
@@ -24,7 +33,7 @@ import {
   putMember as putRemoteMember,
   deleteMember as deleteRemoteMember,
   subscribeSyncStatus,
-} from './sync.js?v=20261005b';
+} from './sync.js?v=20261005c';
 
 const $ = (id) => document.getElementById(id);
 const isTouch = matchMedia('(pointer: coarse)').matches;
@@ -49,6 +58,14 @@ let pkPrevFocus = null;
 let currentDrill = null; // { feature, cities, adcode, name }
 let lastProvinceClick = { time: 0, adcode: '' };
 const firedCityThresholds = new Set();
+
+// 5A 胜迹模式状态
+let spotMode = false;          // false=省市足迹，true=5A胜迹
+let spotsData = [];            // 5A 数据集
+let spotDrill = null;          // { adcode, name } 省级下钻（散开单点）
+let spotLayerEl = null;        // SVG 散点层 <g>
+let activeSpotId = null;       // 底部卡片当前展示的 5A id
+const firedSpotThresholds = new Set(); // 名胜行者称号 toast 去重（会话级）
 
 // 连击状态与阈值触发记录（会话级）
 let lastLightAt = 0;
@@ -104,9 +121,33 @@ function renderTitleBadge() {
 }
 
 function renderProgress(animate = true) {
+  const total = getSpotTotal();
+  if (spotMode && total > 0) {
+    // 5A 模式：x / 359 与名胜行者称号
+    const n = Math.min(Math.max(store.spotVisitCount(), 0), total);
+    const pct = Math.min(Math.max((n / total) * 100, 0), 100);
+    $('lit-num').textContent = n;
+    $('lit-num').nextElementSibling.textContent = ` / ${total}`;
+    $('lit-pct').textContent = pct.toFixed(1).replace(/\.0$/, '') + '%';
+    const bar = $('lit-bar');
+    if (!animate) bar.style.transition = 'none';
+    bar.style.width = pct + '%';
+    if (!animate) requestAnimationFrame(() => (bar.style.transition = ''));
+    const titleEl = $('current-title');
+    const spotTitle = getSpotTitleByCount(n, total);
+    if (spotTitle) {
+      titleEl.textContent = '🏛️ ' + spotTitle.name;
+      titleEl.style.display = 'inline-flex';
+    } else {
+      titleEl.textContent = '';
+      titleEl.style.display = 'none';
+    }
+    return;
+  }
   const n = Math.min(Math.max(store.litCount(), 0), TOTAL_PROVINCES);
   const pct = Math.min(Math.max((n / TOTAL_PROVINCES) * 100, 0), 100);
   $('lit-num').textContent = n;
+  $('lit-num').nextElementSibling.textContent = ' / 34';
   $('lit-pct').textContent = pct.toFixed(1).replace(/\.0$/, '') + '%';
   const bar = $('lit-bar');
   if (!animate) bar.style.transition = 'none';
@@ -125,6 +166,337 @@ function popNumber() {
       el.style.transform = 'scale(1)';
     })
   );
+}
+
+/* ========== 5A 胜迹模式 ========== */
+
+const SPOT_NS = 'http://www.w3.org/2000/svg';
+function spotEl(tag, attrs = {}) {
+  const n = document.createElementNS(SPOT_NS, tag);
+  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+  return n;
+}
+
+/** 省 adcode → 省名（5A 卡片用） */
+function provinceNameOf(adcode) {
+  const f = provinces.find((p) => String(p.properties.adcode) === String(adcode));
+  return f ? f.properties.name : '';
+}
+
+/** 模式切换 UI */
+function renderModeSwitch() {
+  const wrap = $('mode-switch');
+  if (!wrap) return;
+  wrap.querySelectorAll('button').forEach((b) => {
+    const active = (b.dataset.mode === 'spots') === spotMode;
+    b.classList.toggle('active', active);
+    b.setAttribute('aria-pressed', active ? 'true' : 'false');
+  });
+  document.body.classList.toggle('spot-mode', spotMode);
+  const hintEl = $('main-hint');
+  if (hintEl && !store.isPkMode()) {
+    hintEl.textContent = spotMode
+      ? '🏛️ 5A 胜迹：点击星点打卡名山大川 · 点击省份气泡下钻'
+      : '点选省份 · 镌刻足迹  ·  再次点击已点亮的省份可熄灭（需确认）';
+  }
+}
+
+/** 切换 5A / 省市模式 */
+async function setSpotMode(enabled) {
+  const next = Boolean(enabled);
+  if (next === spotMode) return;
+  // 进入 5A 模式前确保数据就绪
+  if (next && spotsData.length === 0) {
+    try {
+      spotsData = await loadSpots();
+    } catch (err) {
+      console.warn('5A 数据加载失败:', err);
+      toast('5A 数据加载失败，请重试');
+      renderModeSwitch();
+      return;
+    }
+  }
+  spotMode = next;
+  hideSpotCard();
+  hideCitySpotsCard();
+  hidePopover();
+  hideTooltip();
+  if (spotMode) {
+    // 进入 5A 模式：若正下钻城市，先回到全国
+    if (currentDrill) returnToNational();
+    spotDrill = null;
+    renderSpotLayer();
+  } else {
+    clearSpotLayer();
+    spotDrill = null;
+    if (mapApi) mapApi.zoomToNational();
+  }
+  renderModeSwitch();
+  renderProgress(false);
+}
+
+/** 清除散点层 */
+function clearSpotLayer() {
+  if (spotLayerEl && spotLayerEl.parentNode) {
+    spotLayerEl.parentNode.removeChild(spotLayerEl);
+  }
+  spotLayerEl = null;
+}
+
+/** 渲染 5A 散点层：全国视图按省聚合气泡，下钻后散开单点 */
+function renderSpotLayer() {
+  if (!spotMode || !mapApi || spotsData.length === 0) return;
+  clearSpotLayer();
+  const svg = mapApi.getSvg();
+  const project = mapApi.project;
+  const member = store.getCurrentMember();
+  const memberColor = member ? member.color : '#C9A25E';
+
+  spotLayerEl = spotEl('g', { class: 'spot-layer' });
+
+  if (!spotDrill) {
+    // 全国视图：按省聚合气泡
+    const byProv = new Map();
+    for (const s of spotsData) {
+      const key = String(s.p);
+      if (!byProv.has(key)) byProv.set(key, []);
+      byProv.get(key).push(s);
+    }
+    for (const f of provinces) {
+      const adcode = String(f.properties.adcode);
+      const list = byProv.get(adcode);
+      if (!list || list.length === 0) continue;
+      let cx = 0, cy = 0;
+      try {
+        const pt = project([list[0].lng, list[0].lat]);
+        // 用该省第一个点的投影估算大致中心；更准用 centroid
+        const c = project(approxCentroidOf(f));
+        if (c && !isNaN(c[0])) { cx = c[0]; cy = c[1]; }
+        else if (pt) { cx = pt[0]; cy = pt[1]; }
+      } catch { continue; }
+      const visited = list.filter((s) => store.isSpotVisited(s.id)).length;
+      const g = spotEl('g', {
+        class: `spot-cluster ${visited === list.length && list.length > 0 ? 'done' : ''}`,
+        tabindex: '0',
+        role: 'button',
+        'data-adcode': adcode,
+        'aria-label': `${f.properties.name}：${visited}/${list.length} 个 5A 已打卡`,
+      });
+      const r = 14 + Math.min(14, Math.sqrt(list.length) * 3);
+      g.appendChild(spotEl('circle', { cx, cy, r, class: 'cluster-bg' }));
+      const label = spotEl('text', { x: cx, y: cy + 5, 'text-anchor': 'middle', class: 'cluster-num' });
+      label.textContent = `${visited}/${list.length}`;
+      g.appendChild(label);
+      g.addEventListener('click', (e) => {
+        e.stopPropagation();
+        drillToSpotProvince(adcode, f.properties.name, f);
+      });
+      g.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault(); e.stopPropagation();
+          drillToSpotProvince(adcode, f.properties.name, f);
+        }
+      });
+      spotLayerEl.appendChild(g);
+    }
+  } else {
+    // 省级下钻：散开单点
+    const list = getSpotsByProvince(spotDrill.adcode);
+    for (const s of list) {
+      let pt = null;
+      try { pt = project([s.lng, s.lat]); } catch { continue; }
+      if (!pt || isNaN(pt[0]) || isNaN(pt[1])) continue;
+      const [cx, cy] = pt;
+      const visited = store.isSpotVisited(s.id);
+      const g = spotEl('g', {
+        class: `spot ${visited ? 'visited' : ''}`,
+        tabindex: '0',
+        role: 'button',
+        'data-spot-id': s.id,
+        'aria-label': `${s.name}，${visited ? '已打卡' : '未打卡'}`,
+      });
+      // 双圆光晕（无滤镜，性能友好）
+      g.appendChild(spotEl('circle', { cx, cy, r: 9, class: 'spot-halo' }));
+      const dot = spotEl('circle', { cx, cy, r: 4.5, class: 'spot-dot' });
+      if (visited) dot.style.fill = memberColor;
+      g.appendChild(dot);
+      g.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const rect = svg.getBoundingClientRect ? svg.getBoundingClientRect() : { left: 0, top: 0 };
+        showSpotCard(s, e.clientX || rect.left + cx, e.clientY || rect.top + cy);
+      });
+      g.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault(); e.stopPropagation();
+          showSpotCard(s, window.innerWidth / 2, window.innerHeight - 120);
+        }
+      });
+      spotLayerEl.appendChild(g);
+    }
+  }
+
+  svg.appendChild(spotLayerEl);
+}
+
+/** 省份几何中心近似（bbox 中心，用于聚合气泡定位） */
+function approxCentroidOf(feature) {
+  try {
+    const coords = [];
+    const geom = feature.geometry;
+    const polys = geom.type === 'MultiPolygon' ? geom.coordinates : [geom.coordinates];
+    for (const poly of polys) {
+      for (const ring of poly) {
+        for (const [lng, lat] of ring) coords.push([lng, lat]);
+      }
+    }
+    if (coords.length === 0) return null;
+    let sx = 0, sy = 0;
+    for (const [x, y] of coords) { sx += x; sy += y; }
+    return [sx / coords.length, sy / coords.length];
+  } catch {
+    return null;
+  }
+}
+
+/** 5A 模式下钻到省 */
+function drillToSpotProvince(adcode, name, feature) {
+  spotDrill = { adcode: String(adcode), name };
+  hideSpotCard();
+  if (mapApi && feature) mapApi.focusFeature(feature);
+  renderSpotLayer();
+  const hintEl = $('main-hint');
+  if (hintEl) hintEl.textContent = `🏛️ ${name} · ${getSpotsByProvince(adcode).length} 个 5A，点击空白处返回全国`;
+}
+
+/** 5A 模式返回全国 */
+function spotBackToNational() {
+  if (!spotDrill) return;
+  spotDrill = null;
+  hideSpotCard();
+  if (mapApi) mapApi.zoomToNational();
+  renderSpotLayer();
+  renderModeSwitch(); // 恢复 hint
+}
+
+/** 刷新散点打卡状态（打卡/取消后调用） */
+function refreshSpotLayer() {
+  if (spotMode) renderSpotLayer();
+}
+
+/* ---------- 5A 底部卡片 ---------- */
+
+function catLabel(cat) {
+  return CAT_LABELS[cat] || '自然山水';
+}
+
+function showSpotCard(spot, clientX, clientY) {
+  activeSpotId = spot.id;
+  const card = $('spot-card');
+  if (!card) return;
+  const visited = store.isSpotVisited(spot.id);
+  const provName = provinceNameOf(spot.p);
+  $('spot-card-name').textContent = spot.name;
+  $('spot-card-meta').textContent =
+    `${provName}${spot.county ? ' · ' + spot.county : ''} · ${catLabel(spot.cat)}${spot.batch ? ' · ' + spot.batch + '年评定' : ''}`;
+  const btn = $('spot-card-visit');
+  btn.textContent = visited ? '✓ 已打卡（点击取消）' : '✦ 打卡';
+  btn.classList.toggle('visited', visited);
+  card.classList.add('show');
+  card.setAttribute('aria-hidden', 'false');
+}
+
+function hideSpotCard() {
+  const card = $('spot-card');
+  if (!card) return;
+  card.classList.remove('show');
+  card.setAttribute('aria-hidden', 'true');
+  activeSpotId = null;
+}
+
+/** 5A 打卡/取消打卡（含名胜行者称号判定） */
+function toggleSpotVisit(spotId) {
+  const wasVisited = store.isSpotVisited(spotId);
+  let ok;
+  if (wasVisited) {
+    ok = store.unvisitSpot(spotId);
+    if (ok) toast('已取消该 5A 打卡');
+  } else {
+    ok = store.visitSpot(spotId);
+    if (ok) {
+      const member = store.getCurrentMember();
+      burstParticles(window.innerWidth / 2, window.innerHeight - 160, store.state.theme);
+      playLight(0);
+      toast(`✦ 已打卡 <b>${(spotsData.find((s) => s.id === spotId) || {}).name || ''}</b>`);
+      checkSpotTitle();
+    }
+  }
+  if (ok) {
+    refreshSpotLayer();
+    renderProgress(false);
+    // 若卡片正展示该景点，刷新按钮状态
+    if (activeSpotId === spotId) {
+      const s = spotsData.find((x) => x.id === spotId);
+      if (s) showSpotCard(s, window.innerWidth / 2, window.innerHeight - 120);
+    }
+  }
+}
+
+/** 名胜行者称号阈值判定（toast，不弹窗） */
+function checkSpotTitle() {
+  const total = getSpotTotal();
+  if (total === 0) return;
+  const count = store.spotVisitCount();
+  const title = getSpotTitleByCount(count, total);
+  if (!title) return;
+  const key = `spot_title_${title.level}`;
+  if (firedSpotThresholds.has(key)) return;
+  firedSpotThresholds.add(key);
+  // 只在首次跨过该档时祝贺（用更低档已触发来近似"跨过"）
+  toast(`🏛️ 荣膺名胜行者称号：<b>${title.name}</b>（${count}/${total}）`);
+  playAchievement();
+  confettiParticles(store.state.theme);
+}
+
+/* ---------- 点亮城市时的 5A 卡片（省市足迹模式） ---------- */
+
+function showCitySpotsCard(cname, cadcode) {
+  const list = getSpotsByCity(cadcode);
+  if (list.length === 0) return;
+  const card = $('city-spots-card');
+  if (!card) return;
+  $('city-spots-title').innerHTML = `你点亮了<b>${cname}</b>，这里有 <b>${list.length}</b> 个 5A 景区`;
+  const ul = $('city-spots-list');
+  ul.innerHTML = '';
+  const memberColor = (store.getCurrentMember() || {}).color || '#C9A25E';
+  for (const s of list) {
+    const visited = store.isSpotVisited(s.id);
+    const li = document.createElement('li');
+    li.className = `city-spot-item ${visited ? 'visited' : ''}`;
+    li.innerHTML = `
+      <span class="city-spot-dot" style="${visited ? `background:${memberColor};box-shadow:0 0 6px ${memberColor}` : ''}"></span>
+      <span class="city-spot-name">${s.name}</span>
+      <span class="city-spot-cat">${catLabel(s.cat)}</span>
+      <button type="button" class="city-spot-btn ${visited ? 'visited' : ''}" data-spot-id="${s.id}">${visited ? '✓' : '打卡'}</button>
+    `;
+    ul.appendChild(li);
+  }
+  ul.querySelectorAll('.city-spot-btn').forEach((b) => {
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleSpotVisit(Number(b.dataset.spotId));
+      // 刷新本卡片列表状态
+      showCitySpotsCard(cname, cadcode);
+    });
+  });
+  card.classList.add('show');
+  card.setAttribute('aria-hidden', 'false');
+}
+
+function hideCitySpotsCard() {
+  const card = $('city-spots-card');
+  if (!card) return;
+  card.classList.remove('show');
+  card.setAttribute('aria-hidden', 'true');
 }
 
 /* ---------- toast ---------- */
@@ -346,6 +718,14 @@ function onTap(f, svgX, svgY, clientX, clientY) {
   const name = f.properties.name;
   hideTooltip();
 
+  // 5A 模式：点击省份 = 下钻散开该省单点（不点亮省份）
+  if (spotMode) {
+    hidePopover();
+    if (spotDrill && spotDrill.adcode === adcode) return;
+    drillToSpotProvince(adcode, name, f);
+    return;
+  }
+
   const now = Date.now();
   if (now - lastProvinceClick.time <= 300 && lastProvinceClick.adcode === adcode) {
     lastProvinceClick = { time: 0, adcode: '' };
@@ -402,6 +782,12 @@ function onTap(f, svgX, svgY, clientX, clientY) {
 function onProvinceDblClick(f) {
   hidePopover();
   lastProvinceClick = { time: 0, adcode: '' };
+  if (spotMode) {
+    const adcode = String(f.properties.adcode);
+    if (spotDrill && spotDrill.adcode === adcode) return;
+    drillToSpotProvince(adcode, f.properties.name, f);
+    return;
+  }
   startDrillDown(f);
 }
 
@@ -426,6 +812,15 @@ function onCityTap(cf, svgX, svgY, clientX, clientY) {
     triggerComboAndLightEffects(clientX, clientY, svgX, svgY, cname);
     mapApi.updateCity(cadcode, true);
     updateBreadcrumb();
+
+    // 5A 联动：该城市有 5A 景区则弹出可关闭的底部卡片
+    if (spotsData.length > 0) {
+      const citySpots = getSpotsByCity(cadcode);
+      if (citySpots.length > 0) {
+        // 稍延迟，让点亮动效先呈现
+        setTimeout(() => showCitySpotsCard(cname, cadcode), 450);
+      }
+    }
 
     const litAfter = litBefore + 1;
     const pctAfter = litAfter / totalCities;
@@ -541,6 +936,31 @@ function renderGallery() {
       </div>
     `;
     achieveGridEl.appendChild(card);
+  }
+
+  // 名胜行者（5A）称号线
+  const spotTotal = getSpotTotal();
+  const spotCount = store.spotVisitCount();
+  const spotTitle = getSpotTitleByCount(spotCount, spotTotal);
+  const spotListEl = $('gallery-spot-title-list');
+  if (spotListEl) {
+    spotListEl.innerHTML = '';
+    for (const t of SPOT_TITLES) {
+      const need = t.min === Infinity ? spotTotal : t.min;
+      const isUnlocked = spotTotal > 0 && spotCount >= need;
+      const isCurrent = spotTitle && spotTitle.level === t.level;
+      const card = document.createElement('div');
+      card.className = `title-card ${isUnlocked ? 'unlocked' : 'locked'}`;
+      card.innerHTML = `
+        <div class="tc-head">
+          <span class="tc-lvl">Lv.${t.level}</span>
+          ${isCurrent ? '<span class="tc-tag">当前称号</span>' : (isUnlocked ? '<span class="tc-tag" style="background:transparent;color:var(--lit-stroke);border:1px solid var(--lit-stroke)">已达成</span>' : '')}
+        </div>
+        <div class="tc-name">${t.name}</div>
+        <div class="tc-desc">${isUnlocked ? t.desc : `需打卡 ${need} 个 5A（当前 ${spotCount}/${need}）`}</div>
+      `;
+      spotListEl.appendChild(card);
+    }
   }
 }
 
@@ -1290,6 +1710,18 @@ function createMapCallbacks() {
         hidePopover();
         return;
       }
+      if ($('spot-card') && $('spot-card').classList.contains('show')) {
+        hideSpotCard();
+        return;
+      }
+      if ($('city-spots-card') && $('city-spots-card').classList.contains('show')) {
+        hideCitySpotsCard();
+        return;
+      }
+      if (spotMode) {
+        spotBackToNational();
+        return;
+      }
       if (currentDrill) {
         returnToNational();
       }
@@ -1318,6 +1750,28 @@ function buildAll() {
 
   buildInset($('inset'), islandsFeature, store.state.theme);
   renderProgress(false);
+  renderModeSwitch();
+
+  // 5A 模式切换
+  const modeSwitch = $('mode-switch');
+  if (modeSwitch) {
+    modeSwitch.querySelectorAll('button').forEach((b) => {
+      b.addEventListener('click', () => {
+        setSpotMode(b.dataset.mode === 'spots');
+      });
+    });
+  }
+  // 5A 底部卡片
+  const spotClose = $('spot-card-close');
+  if (spotClose) spotClose.addEventListener('click', hideSpotCard);
+  const spotVisitBtn = $('spot-card-visit');
+  if (spotVisitBtn) {
+    spotVisitBtn.addEventListener('click', () => {
+      if (activeSpotId != null) toggleSpotVisit(activeSpotId);
+    });
+  }
+  const citySpotsClose = $('city-spots-close');
+  if (citySpotsClose) citySpotsClose.addEventListener('click', hideCitySpotsCard);
 }
 
 async function init() {
@@ -1336,6 +1790,15 @@ async function init() {
   }
 
   buildAll();
+
+  // 加载 5A 数据集（失败不阻塞主流程）
+  try {
+    spotsData = await loadSpots();
+  } catch (err) {
+    console.warn('5A 数据加载失败:', err);
+    spotsData = [];
+  }
+  renderProgress(false);
 
   // 初始化同步层与离线容灾
   initSync(store);
@@ -1363,6 +1826,8 @@ async function init() {
     renderPkToggle();
     renderSoundBtn(s.soundEnabled);
     setAudioEnabled(s.soundEnabled);
+    // 成员切换后刷新 5A 散点打卡状态
+    if (spotMode) refreshSpotLayer();
 
     if ($('gallery-modal').classList.contains('show')) {
       renderGallery();

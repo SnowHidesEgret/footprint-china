@@ -2,9 +2,10 @@
  * 点亮中国 · 状态管理（单向 Store，支持 Phase 3 多用户与云同步）
  * 本地多成员隔离 + 老数据平滑迁移 + 离线缓存
  */
-import { TOTAL_PROVINCES, MAX_MEMBERS, MEMBER_COLORS } from './config.js?v=20261005b';
-import { storage } from './geo.js?v=20261005b';
-import { KNOWN_ACHIEVEMENTS } from './achievements.js?v=20261005b';
+import { TOTAL_PROVINCES, MAX_MEMBERS, MEMBER_COLORS } from './config.js?v=20261005c';
+import { storage } from './geo.js?v=20261005c';
+import { KNOWN_ACHIEVEMENTS } from './achievements.js?v=20261005c';
+import { spotKey } from './spots.js?v=20261005c';
 
 const VALID_THEMES = ['dark', 'light'];
 
@@ -59,6 +60,21 @@ function sanitizeMaxTitle(rawMax) {
   return Number.isInteger(rawMax) && rawMax >= 0 && rawMax <= 8 ? rawMax : 0;
 }
 
+/** 清洗 5A 打卡记录：{ '5a:1': timestamp } */
+function sanitizeSpots(rawSpots) {
+  const spots = {};
+  if (!rawSpots || typeof rawSpots !== 'object' || Array.isArray(rawSpots)) {
+    return spots;
+  }
+  for (const [key, val] of Object.entries(rawSpots)) {
+    const k = typeof key === 'string' ? key.trim() : '';
+    if (/^5a:\d+$/.test(k) && typeof val === 'number' && val > 0) {
+      spots[k] = val;
+    }
+  }
+  return spots;
+}
+
 class Store {
   constructor() {
     const raw = storage.read() || {};
@@ -82,6 +98,7 @@ class Store {
           cities: sanitizeCities(raw.cities),
           unlockedAchievements: sanitizeAchievements(raw.unlockedAchievements),
           maxTitleLevel: sanitizeMaxTitle(raw.maxTitleLevel),
+          spots: sanitizeSpots(raw.spots),
         },
       };
       members = [migratedMember];
@@ -107,6 +124,7 @@ class Store {
             cities: sanitizeCities(fp.cities),
             unlockedAchievements: sanitizeAchievements(fp.unlockedAchievements),
             maxTitleLevel: sanitizeMaxTitle(fp.maxTitleLevel),
+            spots: sanitizeSpots(fp.spots),
           },
         });
       }
@@ -118,7 +136,7 @@ class Store {
           name: '我',
           color: MEMBER_COLORS[0].value,
           updatedAt: Date.now(),
-          footprint: { provinces: {}, cities: {}, unlockedAchievements: [], maxTitleLevel: 0 },
+          footprint: { provinces: {}, cities: {}, unlockedAchievements: [], maxTitleLevel: 0, spots: {} },
         }];
       }
 
@@ -127,7 +145,7 @@ class Store {
     }
 
     this.state = {
-      version: 2,
+      version: 3,
       theme,
       soundEnabled,
       roomCode,
@@ -139,12 +157,13 @@ class Store {
       cities: {},
       unlockedAchievements: [],
       maxTitleLevel: 0,
+      spots: {},
     };
 
     this.listeners = new Set();
     this._syncActiveMember();
     // 首次迁移后持久化
-    if (!raw.members || raw.version !== 2) {
+    if (!raw.members || raw.version !== 3) {
       this._commit();
     }
   }
@@ -156,6 +175,7 @@ class Store {
       this.state.cities = member.footprint.cities;
       this.state.unlockedAchievements = member.footprint.unlockedAchievements;
       this.state.maxTitleLevel = member.footprint.maxTitleLevel;
+      this.state.spots = member.footprint.spots || {};
     }
   }
 
@@ -168,7 +188,7 @@ class Store {
     this._syncActiveMember();
     // 写入 localStorage
     const snapshot = {
-      version: 2,
+      version: 3,
       theme: this.state.theme,
       soundEnabled: this.state.soundEnabled,
       roomCode: this.state.roomCode,
@@ -227,6 +247,7 @@ class Store {
         cities: {},
         unlockedAchievements: [],
         maxTitleLevel: 0,
+        spots: {},
       },
     };
 
@@ -302,6 +323,7 @@ class Store {
               cities: sanitizeCities(rm.footprint?.cities),
               unlockedAchievements: sanitizeAchievements(rm.footprint?.unlockedAchievements),
               maxTitleLevel: sanitizeMaxTitle(rm.footprint?.maxTitleLevel),
+              spots: sanitizeSpots(rm.footprint?.spots),
             },
           };
           this.state.members.push(newM);
@@ -320,6 +342,7 @@ class Store {
             cities: sanitizeCities(rm.footprint?.cities),
             unlockedAchievements: sanitizeAchievements(rm.footprint?.unlockedAchievements),
             maxTitleLevel: sanitizeMaxTitle(rm.footprint?.maxTitleLevel),
+            spots: sanitizeSpots(rm.footprint?.spots),
           };
           localChanged = true;
         }
@@ -490,6 +513,46 @@ class Store {
       }
     }
     return count;
+  }
+
+  /* ========== 5A 景区打卡（独立于省市点亮） ========== */
+
+  /** 是否已打卡某 5A（spotId 为数字 id） */
+  isSpotVisited(spotId) {
+    const member = this.getCurrentMember();
+    const spots = member.footprint.spots || {};
+    return Boolean(spots[spotKey(spotId)]);
+  }
+
+  /** 打卡 5A（绝不联动省市点亮） */
+  visitSpot(spotId) {
+    const member = this.getCurrentMember();
+    if (!member.footprint.spots) member.footprint.spots = {};
+    const key = spotKey(spotId);
+    if (member.footprint.spots[key]) return false;
+    member.footprint.spots[key] = Date.now();
+    member.updatedAt = Date.now();
+    this._commit();
+    return true;
+  }
+
+  /** 取消 5A 打卡 */
+  unvisitSpot(spotId) {
+    const member = this.getCurrentMember();
+    const spots = member.footprint.spots || {};
+    const key = spotKey(spotId);
+    if (!spots[key]) return false;
+    delete spots[key];
+    member.updatedAt = Date.now();
+    this._commit();
+    return true;
+  }
+
+  /** 当前成员 5A 打卡总数 */
+  spotVisitCount() {
+    const member = this.getCurrentMember();
+    const spots = member.footprint.spots || {};
+    return Object.keys(spots).length;
   }
 
   setTheme(theme) {

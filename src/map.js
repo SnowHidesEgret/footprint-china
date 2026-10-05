@@ -3,7 +3,7 @@
  * 主地图：34 省 path；右下角：南海诸岛插图（真实岛礁数据 + 十段线示意）
  */
 import { geoMercator, geoPath, geoCentroid, geoBounds } from 'd3-geo';
-import { THEMES, LIT_GRADIENT, TEN_DASH_LINE, SMALL_REGION_HIT, HIT_CIRCLE_R } from './config.js?v=20261005b';
+import { THEMES, LIT_GRADIENT, TEN_DASH_LINE, SMALL_REGION_HIT, HIT_CIRCLE_R } from './config.js?v=20261005c';
 
 const NS = 'http://www.w3.org/2000/svg';
 const el = (tag, attrs = {}) => {
@@ -465,6 +465,39 @@ export function buildMainMap(svg, provinces, cbs, themeName = 'dark') {
       if (g && typeof g.focus === 'function') {
         try { g.focus(); } catch {}
       }
+    },
+    /**
+     * 5A 模式：平滑聚焦到指定省份地理范围（不渲染城市层）
+     * @param {Object} provinceFeature GeoJSON 要素
+     */
+    focusFeature(provinceFeature) {
+      if (!provinceFeature) return;
+      const [[minLng, minLat], [maxLng, maxLat]] = geoBounds(provinceFeature);
+      const p0 = projection([minLng, maxLat]);
+      const p1 = projection([maxLng, minLat]);
+      const bx0 = Math.min(p0[0], p1[0]);
+      const by0 = Math.min(p0[1], p1[1]);
+      const bx1 = Math.max(p0[0], p1[0]);
+      const by1 = Math.max(p0[1], p1[1]);
+      const cx = (bx0 + bx1) / 2;
+      const cy = (by0 + by1) / 2;
+      let bw = Math.max(bx1 - bx0, 20) * 1.35;
+      let bh = Math.max(by1 - by0, 20) * 1.35;
+      const aspect = W / H;
+      if (bw / bh > aspect) {
+        bh = bw / aspect;
+      } else {
+        bw = bh * aspect;
+      }
+      animateViewBox([cx - bw / 2, cy - bh / 2, bw, bh], 600);
+    },
+    /** 返回全国视图（5A 模式用，不触碰城市层） */
+    zoomToNational() {
+      animateViewBox([0, 0, W, H], 600);
+    },
+    /** 暴露 svg 供 5A 散点层挂载 */
+    getSvg() {
+      return svg;
     },
     isDrilled() {
       return Boolean(activeDrilledAdcode);
