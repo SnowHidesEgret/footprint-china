@@ -2,12 +2,12 @@
  * 点亮中国 · 入口：组装地图 / 状态 / 视听反馈与交互
  * 包含 Phase 2（音效/粒子/成就/城市下钻/称号/主题）与 Phase 3（多用户云同步/PK透视对战）
  */
-import { TOTAL_PROVINCES, MAX_MEMBERS, MEMBER_COLORS } from './config.js?v=20261005f';
-import { loadGeo, loadCityGeo, isCityGeoLoaded, getLoadedCityGeo } from './geo.js?v=20261005f';
-import { store } from './store.js?v=20261005f';
-import { buildMainMap, buildInset, applyThemeVars } from './map.js?v=20261005f';
-import { ensureCtx, setEnabled as setAudioEnabled, playLight, playUnlight, playAchievement } from './audio.js?v=20261005f';
-import { initParticles, burst as burstParticles, confetti as confettiParticles, setParticlesTheme, resizeParticles } from './particles.js?v=20261005f';
+import { TOTAL_PROVINCES, MAX_MEMBERS, MEMBER_COLORS } from './config.js?v=20261005g';
+import { loadGeo, loadCityGeo, isCityGeoLoaded, getLoadedCityGeo } from './geo.js?v=20261005g';
+import { store } from './store.js?v=20261005g';
+import { buildMainMap, buildInset, applyThemeVars } from './map.js?v=20261005g';
+import { ensureCtx, setEnabled as setAudioEnabled, playLight, playUnlight, playAchievement } from './audio.js?v=20261005g';
+import { initParticles, burst as burstParticles, confetti as confettiParticles, setParticlesTheme, resizeParticles } from './particles.js?v=20261005g';
 import {
   TITLES,
   ACHIEVEMENTS,
@@ -15,7 +15,7 @@ import {
   initProvinceAdcodes,
   getAdcode,
   checkAchievements,
-} from './achievements.js?v=20261005f';
+} from './achievements.js?v=20261005g';
 import {
   loadSpots,
   getSpotTotal,
@@ -24,7 +24,8 @@ import {
   getSpotTitleByCount,
   SPOT_TITLES,
   CAT_LABELS,
-} from './spots.js?v=20261005f';
+} from './spots.js?v=20261005g';
+import { loadPoetry, getPoetry } from './poetry.js?v=20261005g';
 import {
   initSync,
   createRoom,
@@ -33,7 +34,7 @@ import {
   putMember as putRemoteMember,
   deleteMember as deleteRemoteMember,
   subscribeSyncStatus,
-} from './sync.js?v=20261005f';
+} from './sync.js?v=20261005g';
 
 const $ = (id) => document.getElementById(id);
 const isTouch = matchMedia('(pointer: coarse)').matches;
@@ -515,6 +516,23 @@ function toast(html) {
   toastTimer = setTimeout(() => t.classList.remove('show'), 1600);
 }
 
+/* ---------- 诗词点亮：点亮省/市时水墨浮现一句诗 ---------- */
+let poetryTimer = null;
+function showPoetry(adcode) {
+  const p = getPoetry(adcode);
+  if (!p) return;
+  const el = $('poetry-overlay');
+  if (!el) return;
+  $('poetry-line').textContent = p.line;
+  $('poetry-from').textContent = `—— ${p.from} · ${p.author}`;
+  el.classList.remove('show');
+  // 强制重排，让动画可重复触发
+  void el.offsetWidth;
+  el.classList.add('show');
+  clearTimeout(poetryTimer);
+  poetryTimer = setTimeout(() => el.classList.remove('show'), 3600);
+}
+
 /* ---------- 通用确认弹窗（替代原生 confirm：原生弹窗在部分浏览器/自动化环境会被拦截导致无响应） ---------- */
 let confirmResolve = null;
 function closeConfirm(val) {
@@ -760,6 +778,8 @@ function onTap(f, svgX, svgY, clientX, clientY) {
       (c) => store.isCityLit(c),
       store.isPkMode() ? store.getPkStats() : null
     );
+    // 诗词点亮：浮现一句与该省相关的诗
+    showPoetry(adcode);
 
     const newAch = handleAchievementChecks();
     const unlockSoundPlayed = newAch.length > 0;
@@ -818,6 +838,8 @@ function onCityTap(cf, svgX, svgY, clientX, clientY) {
     triggerComboAndLightEffects(clientX, clientY, svgX, svgY, cname);
     mapApi.updateCity(cadcode, true);
     updateBreadcrumb();
+    // 诗词点亮：浮现一句与该市相关的诗（城市无专属则回落到省级）
+    showPoetry(cadcode);
 
     // 5A 联动：该城市有 5A 景区则弹出可关闭的底部卡片
     if (spotsData.length > 0) {
@@ -1819,6 +1841,13 @@ async function init() {
   } catch (err) {
     console.warn('5A 数据加载失败:', err);
     spotsData = [];
+  }
+
+  // 加载诗词数据集（失败不阻塞主流程）
+  try {
+    await loadPoetry();
+  } catch (err) {
+    console.warn('诗词数据加载失败:', err);
   }
   renderProgress(false);
 

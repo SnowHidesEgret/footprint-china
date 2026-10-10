@@ -686,6 +686,43 @@ html, body {
   color: var(--lit-stroke);
 }
 
+/* 诗词点亮浮层：水墨淡入，不拦截操作 */
+#poetry-overlay {
+  position: fixed;
+  left: 50%;
+  top: 34%;
+  transform: translateX(-50%) translateY(12px);
+  z-index: 45;
+  pointer-events: none;
+  text-align: center;
+  opacity: 0;
+  max-width: min(88vw, 640px);
+  padding: 0 16px;
+}
+#poetry-overlay.show {
+  animation: poetry-ink 3.6s ease forwards;
+}
+#poetry-line {
+  font-family: "STKaiti", "KaiTi", "楷体", "STSong", "SimSun", serif;
+  font-size: clamp(20px, 4.6vw, 32px);
+  letter-spacing: 0.12em;
+  color: var(--text);
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.35);
+  line-height: 1.7;
+}
+#poetry-from {
+  margin-top: 10px;
+  font-size: 13px;
+  letter-spacing: 0.2em;
+  color: var(--text-dim);
+}
+@keyframes poetry-ink {
+  0% { opacity: 0; transform: translateX(-50%) translateY(14px); filter: blur(6px); }
+  18% { opacity: 1; transform: translateX(-50%) translateY(0); filter: blur(0); }
+  72% { opacity: 1; transform: translateX(-50%) translateY(0); filter: blur(0); }
+  100% { opacity: 0; transform: translateX(-50%) translateY(-10px); filter: blur(4px); }
+}
+
 /* 连击徽记 */
 #combo {
   position: fixed;

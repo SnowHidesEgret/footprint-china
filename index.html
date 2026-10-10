@@ -7,7 +7,7 @@
 <meta name="description" content="交互式中国地图足迹：点击你去过的省份，点亮属于你的山河版图。">
 <meta name="theme-color" content="#080c16">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗺️</text></svg>">
-<link rel="stylesheet" href="styles.css?v=20261005f">
+<link rel="stylesheet" href="styles.css?v=20261005g">
 <script type="importmap">
 { "imports": { "d3-geo": "https://esm.sh/d3-geo@3.1.1" } }
 </script>
@@ -102,6 +102,12 @@
 <div id="combo" aria-hidden="true"><span id="combo-text">Combo x2!</span></div>
 
 <div id="toast" role="status" aria-live="polite"></div>
+
+<!-- 诗词点亮浮层：点亮省/市时水墨浮现一句诗 -->
+<div id="poetry-overlay" aria-hidden="true">
+  <div id="poetry-line"></div>
+  <div id="poetry-from"></div>
+</div>
 
 <!-- 5A 景点底部卡片 -->
 <div id="spot-card" class="bottom-card" role="dialog" aria-modal="false" aria-labelledby="spot-card-name" aria-hidden="true">
@@ -237,6 +243,6 @@
   </div>
 </div>
 
-<script type="module" src="src/main.js?v=20261005f"></script>
+<script type="module" src="src/main.js?v=20261005g"></script>
 </body>
 </html>
