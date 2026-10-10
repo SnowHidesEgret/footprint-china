@@ -2,7 +2,7 @@
  * 点亮中国 · 同步层（封装 Worker API 客户端与离线容灾）
  * 2 秒防抖自动 PUT 同步、打开/加入拉取全家数据、无网络静默降级
  */
-import { SYNC_DEBOUNCE_MS, SYNC_API_BASE } from './config.js?v=20261005k';
+import { SYNC_DEBOUNCE_MS, SYNC_API_BASE } from './config.js?v=20261005l';
 
 let syncTimer = null;
 let syncStatus = 'idle'; // 'idle' | 'syncing' | 'saved' | 'offline'
@@ -242,9 +242,6 @@ export function scheduleAutoSync(store) {
  */
 export function initSync(store) {
   // v5：房间成员视图由大厅/房间页面按需拉取，不再全局自动合并
-  // 自动同步通过 store.subscribe 在 main.js 中绑定
-}
-
   // 监听本地 Store 变化，若足迹变更则防抖同步
   store.subscribe(() => {
     scheduleAutoSync(store);
