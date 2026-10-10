@@ -2,7 +2,7 @@
  * 点亮中国 · 同步层（封装 Worker API 客户端与离线容灾）
  * 2 秒防抖自动 PUT 同步、打开/加入拉取全家数据、无网络静默降级
  */
-import { SYNC_DEBOUNCE_MS, SYNC_API_BASE } from './config.js?v=20261005l';
+import { SYNC_DEBOUNCE_MS, SYNC_API_BASE } from './config.js?v=20261005m';
 
 let syncTimer = null;
 let syncStatus = 'idle'; // 'idle' | 'syncing' | 'saved' | 'offline'
@@ -134,6 +134,9 @@ export async function putUser(userId, userData) {
   setStatus('offline');
   return false;
 }
+
+/** @deprecated 旧名别名，用 putUser() */
+export const putMember = putUser;
 
 /**
  * 从云端房间移除成员（v5：语义改为移出房间，不删用户）
