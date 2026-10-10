@@ -5,10 +5,10 @@
 
 export const STORE_KEY = 'footprint_china_v1_store';
 export const TOTAL_PROVINCES = 34;
-export const MAX_MEMBERS = 6;
+export const MAX_MEMBERS = 8;
 export const SYNC_DEBOUNCE_MS = 2000;
 
-/** 家庭成员 6 人新中式配色 */
+/** 家庭成员 8 人新中式配色 */
 export const MEMBER_COLORS = [
   { name: '鎏金', value: '#C9A25E', glow: 'rgba(201, 162, 94, 0.55)', lightStroke: '#E6C98A' },
   { name: '青瓷', value: '#7FB3A3', glow: 'rgba(127, 179, 163, 0.55)', lightStroke: '#A6D5C7' },
@@ -16,6 +16,8 @@ export const MEMBER_COLORS = [
   { name: '黛蓝', value: '#5B7FA6', glow: 'rgba(91, 127, 166, 0.55)', lightStroke: '#88A9CE' },
   { name: '绛紫', value: '#9E5B74', glow: 'rgba(158, 91, 116, 0.55)', lightStroke: '#C48FA5' },
   { name: '赭石', value: '#B07A4F', glow: 'rgba(176, 122, 79, 0.55)', lightStroke: '#D6A87E' },
+  { name: '竹青', value: '#6B8E6B', glow: 'rgba(107, 142, 107, 0.55)', lightStroke: '#93B893' },
+  { name: '月白', value: '#9FB3C8', glow: 'rgba(159, 179, 200, 0.55)', lightStroke: '#C2D2E3' },
 ];
 
 /** 合家欢（多人点亮）金紫交辉配色 */

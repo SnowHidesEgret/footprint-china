@@ -2,12 +2,12 @@
  * 点亮中国 · 入口：组装地图 / 状态 / 视听反馈与交互
  * 包含 Phase 2（音效/粒子/成就/城市下钻/称号/主题）与 Phase 3（多用户云同步/PK透视对战）
  */
-import { TOTAL_PROVINCES, MAX_MEMBERS, MEMBER_COLORS } from './config.js?v=20261005i';
-import { loadGeo, loadCityGeo, isCityGeoLoaded, getLoadedCityGeo } from './geo.js?v=20261005i';
-import { store } from './store.js?v=20261005i';
-import { buildMainMap, buildInset, applyThemeVars } from './map.js?v=20261005i';
-import { ensureCtx, setEnabled as setAudioEnabled, playLight, playUnlight, playAchievement } from './audio.js?v=20261005i';
-import { initParticles, burst as burstParticles, confetti as confettiParticles, setParticlesTheme, resizeParticles } from './particles.js?v=20261005i';
+import { TOTAL_PROVINCES, MAX_MEMBERS, MEMBER_COLORS } from './config.js?v=20261005k';
+import { loadGeo, loadCityGeo, isCityGeoLoaded, getLoadedCityGeo } from './geo.js?v=20261005k';
+import { store } from './store.js?v=20261005k';
+import { buildMainMap, buildInset, applyThemeVars } from './map.js?v=20261005k';
+import { ensureCtx, setEnabled as setAudioEnabled, playLight, playUnlight, playAchievement } from './audio.js?v=20261005k';
+import { initParticles, burst as burstParticles, confetti as confettiParticles, setParticlesTheme, resizeParticles } from './particles.js?v=20261005k';
 import {
   TITLES,
   ACHIEVEMENTS,
@@ -15,7 +15,7 @@ import {
   initProvinceAdcodes,
   getAdcode,
   checkAchievements,
-} from './achievements.js?v=20261005i';
+} from './achievements.js?v=20261005k';
 import {
   loadSpots,
   getSpotTotal,
@@ -24,17 +24,20 @@ import {
   getSpotTitleByCount,
   SPOT_TITLES,
   CAT_LABELS,
-} from './spots.js?v=20261005i';
-import { loadPoetry, getPoetry } from './poetry.js?v=20261005i';
+} from './spots.js?v=20261005k';
+import { loadPoetry, getPoetry } from './poetry.js?v=20261005k';
+import { initLobby, showLobby, hideLobby } from './lobby.js?v=20261005k';
 import {
   initSync,
   createRoom,
   joinRoom,
   fetchRoom,
+  leaveRoom,
+  claimIdentity,
   putMember as putRemoteMember,
   deleteMember as deleteRemoteMember,
   subscribeSyncStatus,
-} from './sync.js?v=20261005i';
+} from './sync.js?v=20261005k';
 
 const $ = (id) => document.getElementById(id);
 const isTouch = matchMedia('(pointer: coarse)').matches;
@@ -1424,7 +1427,7 @@ $('confirm-add-member-btn').addEventListener('click', () => {
     renderFamilyModal();
     toast(`已添加家庭成员 <b>${newMember.name}</b>`);
   } else {
-    toast('家庭成员已满 6 人');
+    toast('家庭成员已满 8 人');
   }
 });
 
@@ -1558,10 +1561,11 @@ if (gallerySheet) {
   });
 }
 
-// 成员与家庭房间管理弹窗
+// 成员与家庭房间管理弹窗 → 大厅（Phase 1 用户系统）
+// 原 family-modal 保留不动，后续再删
 $('member-btn').addEventListener('click', (e) => {
   e.stopPropagation();
-  openFamilyModal();
+  showLobby();
 });
 
 $('family-close').addEventListener('click', (e) => {
@@ -1930,6 +1934,32 @@ async function init() {
     else if (status === 'saved') indicator.textContent = '🟢 已同步';
     else if (status === 'offline') indicator.textContent = '⚪ 离线模式';
     else indicator.textContent = '就绪';
+  });
+
+  // 初始化大厅（Phase 1 用户系统）
+  initLobby(store, { createRoom, joinRoom, fetchRoom, leaveRoom, claimIdentity }, {
+    toast: (msg) => toast(msg),
+    onEnterRoom: (code) => {
+      // 进房后刷新顶部按钮
+      renderMemberButton();
+    },
+    onUserSwitched: () => {
+      renderMemberButton();
+      renderProgress(false);
+      if (mapApi) {
+        mapApi.update(
+          (c) => store.isLit(c),
+          (c) => store.isCityLit(c),
+          store.isPkMode() ? store.getPkStats() : null
+        );
+      }
+    },
+    onRoomLeft: () => {
+      renderMemberButton();
+    },
+    onClaim: (code, fromUserId) => {
+      toast('认领功能即将上线');
+    },
   });
 
   // Store 状态订阅

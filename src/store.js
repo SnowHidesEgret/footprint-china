@@ -3,10 +3,10 @@
  * v5: 用户身份解耦（users + footprints），房间列表化（rooms），支持大厅与认领
  * 本地多用户隔离 + 老数据平滑迁移 + 离线缓存
  */
-import { TOTAL_PROVINCES, MAX_MEMBERS, MEMBER_COLORS } from './config.js?v=20261005i';
-import { storage } from './geo.js?v=20261005i';
-import { KNOWN_ACHIEVEMENTS } from './achievements.js?v=20261005i';
-import { spotKey } from './spots.js?v=20261005i';
+import { TOTAL_PROVINCES, MAX_MEMBERS, MEMBER_COLORS } from './config.js?v=20261005k';
+import { storage } from './geo.js?v=20261005k';
+import { KNOWN_ACHIEVEMENTS } from './achievements.js?v=20261005k';
+import { spotKey } from './spots.js?v=20261005k';
 
 const VALID_THEMES = ['dark', 'light'];
 
