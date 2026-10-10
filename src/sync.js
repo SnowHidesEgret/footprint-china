@@ -60,17 +60,18 @@ async function apiRequest(path, options = {}) {
 /* ========== REST API 封装 ========== */
 
 /**
- * 创建新房间
- * @param {string} name 初始成员名字
- * @returns {Promise<{code: string, memberId: string}|null>}
+ * 创建新房间（v5）
+ * @param {string} name 房间名
+ * @param {string} ownerUserId 房主用户 ID
+ * @returns {Promise<{code: string}|null>}
  */
-export async function createRoom(name) {
+export async function createRoom(name, ownerUserId) {
   setStatus('syncing');
   const res = await apiRequest('/api/rooms', {
     method: 'POST',
-    body: JSON.stringify({ name }),
+    body: JSON.stringify({ name, ownerUserId }),
   });
-  if (res && res.code && res.memberId) {
+  if (res && res.code) {
     setStatus('saved');
     return res;
   }
@@ -79,18 +80,18 @@ export async function createRoom(name) {
 }
 
 /**
- * 加入现有房间
+ * 加入现有房间（v5）
  * @param {string} code 6 位房间码
- * @param {string} name 成员名字
- * @returns {Promise<{memberId: string, members: Array}|null>}
+ * @param {string} userId 用户 ID
+ * @returns {Promise<{ok: boolean, members: Array}|null>}
  */
-export async function joinRoom(code, name) {
+export async function joinRoom(code, userId) {
   setStatus('syncing');
   const res = await apiRequest(`/api/rooms/${code}/join`, {
     method: 'POST',
-    body: JSON.stringify({ name }),
+    body: JSON.stringify({ userId }),
   });
-  if (res && res.memberId) {
+  if (res && res.ok) {
     setStatus('saved');
     return res;
   }
@@ -99,9 +100,9 @@ export async function joinRoom(code, name) {
 }
 
 /**
- * 获取房间全家足迹数据
+ * 获取房间全家足迹数据（v5 新形状）
  * @param {string} code 6 位房间码
- * @returns {Promise<{members: Array}|null>}
+ * @returns {Promise<{code, name, ownerUserId, members: Array}|null>}
  */
 export async function fetchRoom(code) {
   setStatus('syncing');
@@ -115,17 +116,16 @@ export async function fetchRoom(code) {
 }
 
 /**
- * 推送当前成员足迹数据
- * @param {string} code 6 位房间码
- * @param {string} memberId 成员 ID
- * @param {Object} memberData { name, color, footprint }
+ * 推送当前用户足迹数据（v5）
+ * @param {string} userId 用户 ID
+ * @param {Object} userData { nickname?, color?, footprint?, roomCodes? }
  * @returns {Promise<boolean>}
  */
-export async function putMember(code, memberId, memberData) {
+export async function putUser(userId, userData) {
   setStatus('syncing');
-  const res = await apiRequest(`/api/rooms/${code}/members/${memberId}`, {
+  const res = await apiRequest(`/api/users/${userId}`, {
     method: 'PUT',
-    body: JSON.stringify(memberData),
+    body: JSON.stringify(userData),
   });
   if (res && res.ok) {
     setStatus('saved');
@@ -136,14 +136,14 @@ export async function putMember(code, memberId, memberData) {
 }
 
 /**
- * 从云端房间移除成员
+ * 从云端房间移除成员（v5：语义改为移出房间，不删用户）
  * @param {string} code 6 位房间码
- * @param {string} memberId 成员 ID
+ * @param {string} userId 用户 ID
  * @returns {Promise<boolean>}
  */
-export async function deleteMember(code, memberId) {
+export async function deleteMember(code, userId) {
   setStatus('syncing');
-  const res = await apiRequest(`/api/rooms/${code}/members/${memberId}`, {
+  const res = await apiRequest(`/api/rooms/${code}/members/${userId}`, {
     method: 'DELETE',
   });
   if (res && res.ok) {
@@ -154,21 +154,62 @@ export async function deleteMember(code, memberId) {
   return false;
 }
 
-/* ========== 防抖自动同步引擎 ========== */
+/**
+ * 认领身份（v5 新增）
+ * @param {string} code 房间码
+ * @param {string} fromUserId 被认领的用户 ID
+ * @param {string} toUserId 认领者的用户 ID
+ * @returns {Promise<boolean>}
+ */
+export async function claimIdentity(code, fromUserId, toUserId) {
+  setStatus('syncing');
+  const res = await apiRequest(`/api/rooms/${code}/claim`, {
+    method: 'POST',
+    body: JSON.stringify({ fromUserId, toUserId }),
+  });
+  if (res && res.ok) {
+    setStatus('saved');
+    return true;
+  }
+  setStatus('offline');
+  return false;
+}
+
+/**
+ * 退出房间（v5 新增）
+ * @param {string} code 房间码
+ * @param {string} userId 用户 ID
+ * @returns {Promise<boolean>}
+ */
+export async function leaveRoom(code, userId) {
+  setStatus('syncing');
+  const res = await apiRequest(`/api/rooms/${code}/leave`, {
+    method: 'POST',
+    body: JSON.stringify({ userId }),
+  });
+  if (res && res.ok) {
+    setStatus('saved');
+    return true;
+  }
+  setStatus('offline');
+  return false;
+}
+
+/* ========== 防抖自动同步引擎（v5） ========== */
 
 let lastSyncedTimestamp = 0;
 
 /**
  * 调度防抖自动同步（2 秒内无新变更后触发 PUT）
+ * v5：同步的是用户本人的全局足迹（PUT /api/users/:userId），不再绑定房间
  * @param {Object} store Store 实例
  */
 export function scheduleAutoSync(store) {
-  const code = store.getRoomCode();
-  const currentMember = store.getCurrentMember();
-  if (!code || !currentMember) return;
+  const user = store.getActiveUser();
+  if (!user) return;
 
-  // 如果该成员暂无最新改动，跳过
-  if (currentMember.updatedAt && currentMember.updatedAt <= lastSyncedTimestamp) {
+  const fp = store.getActiveFootprint();
+  if (fp && fp.updatedAt && fp.updatedAt <= lastSyncedTimestamp) {
     return;
   }
 
@@ -176,42 +217,33 @@ export function scheduleAutoSync(store) {
   setStatus('syncing');
 
   syncTimer = setTimeout(async () => {
-    const memberNow = store.getCurrentMember();
-    if (!memberNow || store.getRoomCode() !== code) return;
+    const userNow = store.getActiveUser();
+    if (!userNow || store.getActiveUserId() !== user.userId) return;
 
-    const ok = await putMember(code, memberNow.id, {
-      name: memberNow.name,
-      color: memberNow.color,
-      footprint: memberNow.footprint,
+    const fpNow = store.getActiveFootprint();
+    const roomCodes = store.getRooms().map((r) => r.code);
+    const ok = await putUser(userNow.userId, {
+      nickname: userNow.nickname,
+      color: userNow.color,
+      footprint: fpNow,
+      roomCodes,
     });
 
     if (ok) {
-      lastSyncedTimestamp = memberNow.updatedAt || Date.now();
-      setStatus('saved');
-    } else {
-      setStatus('offline');
+      lastSyncedTimestamp = fpNow?.updatedAt || Date.now();
     }
   }, SYNC_DEBOUNCE_MS);
 }
 
 /**
- * 初始化同步层：启动拉取并在 Store 订阅中绑定自动同步
+ * 初始化同步层：v5 不再自动拉取合并房间成员（房间成员为只读视图）
+ * 仅订阅 Store 变更以触发自动同步
  * @param {Object} store Store 实例
  */
 export function initSync(store) {
-  const roomCode = store.getRoomCode();
-
-  // 若本地已加入房间，打开页面时静默 GET 拉取全家数据
-  if (roomCode) {
-    fetchRoom(roomCode).then((res) => {
-      if (res && Array.isArray(res.members)) {
-        store.mergeRemoteMembers(res.members);
-      }
-    }).catch(() => {
-      // 离线静默处理
-      setStatus('offline');
-    });
-  }
+  // v5：房间成员视图由大厅/房间页面按需拉取，不再全局自动合并
+  // 自动同步通过 store.subscribe 在 main.js 中绑定
+}
 
   // 监听本地 Store 变化，若足迹变更则防抖同步
   store.subscribe(() => {

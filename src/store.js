@@ -1,6 +1,7 @@
 /**
  * 点亮中国 · 状态管理（单向 Store，支持 Phase 3 多用户与云同步）
- * 本地多成员隔离 + 老数据平滑迁移 + 离线缓存
+ * v5: 用户身份解耦（users + footprints），房间列表化（rooms），支持大厅与认领
+ * 本地多用户隔离 + 老数据平滑迁移 + 离线缓存
  */
 import { TOTAL_PROVINCES, MAX_MEMBERS, MEMBER_COLORS } from './config.js?v=20261005i';
 import { storage } from './geo.js?v=20261005i';
@@ -98,81 +99,119 @@ class Store {
     const raw = storage.read() || {};
     const theme = VALID_THEMES.includes(raw.theme) ? raw.theme : 'dark';
     const soundEnabled = Boolean(raw.soundEnabled ?? true);
-    const roomCode = typeof raw.roomCode === 'string' && /^\d{6}$/.test(raw.roomCode) ? raw.roomCode : null;
 
-    let members = [];
-    let currentMemberId = '';
+    let users = [];
+    let footprints = {};
+    let activeUserId = '';
+    let rooms = [];
+    let activeRoomCode = null;
 
-    // 检测是否为旧版单用户数据或无成员数据 → 首次升级迁移
-    if (!raw.members || !Array.isArray(raw.members) || raw.members.length === 0) {
-      const initialMemberId = 'm_' + Date.now().toString(36);
-      const migratedMember = {
-        id: initialMemberId,
-        name: '我',
-        color: MEMBER_COLORS[0].value,
-        updatedAt: Date.now(),
-        footprint: {
-          provinces: sanitizeProvinces(raw.provinces),
-          cities: sanitizeCities(raw.cities),
-          unlockedAchievements: sanitizeAchievements(raw.unlockedAchievements),
-          maxTitleLevel: sanitizeMaxTitle(raw.maxTitleLevel),
-          spots: sanitizeSpots(raw.spots),
-          memos: sanitizeMemos(raw.memos),
-        },
-      };
-      members = [migratedMember];
-      currentMemberId = initialMemberId;
-    } else {
-      // 多成员数据校验与清洗
-      for (let i = 0; i < Math.min(raw.members.length, MAX_MEMBERS); i++) {
-        const rm = raw.members[i];
-        if (!rm || typeof rm !== 'object') continue;
-        const id = typeof rm.id === 'string' && rm.id ? rm.id : 'm_' + (i + 1);
-        const name = typeof rm.name === 'string' && rm.name.trim() ? rm.name.trim().slice(0, 16) : `成员${i + 1}`;
-        const color = typeof rm.color === 'string' && rm.color ? rm.color : MEMBER_COLORS[i % MEMBER_COLORS.length].value;
-        const updatedAt = typeof rm.updatedAt === 'number' ? rm.updatedAt : Date.now();
-        const fp = rm.footprint || {};
-
-        members.push({
-          id,
-          name,
+    // v5 迁移：从 v4（members 内嵌 footprint、单个 roomCode）升级
+    if (raw.version === 5 && Array.isArray(raw.users)) {
+      // v5 数据校验与清洗
+      for (const ru of raw.users) {
+        if (!ru || typeof ru !== 'object') continue;
+        const userId = typeof ru.userId === 'string' && ru.userId ? ru.userId : '';
+        if (!userId) continue;
+        const nickname = typeof ru.nickname === 'string' && ru.nickname.trim()
+          ? ru.nickname.trim().slice(0, 16) : '我';
+        const color = typeof ru.color === 'string' && ru.color ? ru.color : MEMBER_COLORS[users.length % MEMBER_COLORS.length].value;
+        users.push({
+          userId,
+          nickname,
           color,
-          updatedAt,
-          footprint: {
+          createdAt: typeof ru.createdAt === 'number' ? ru.createdAt : Date.now(),
+          updatedAt: typeof ru.updatedAt === 'number' ? ru.updatedAt : Date.now(),
+        });
+      }
+      const rawFp = raw.footprints || {};
+      for (const u of users) {
+        const fp = rawFp[u.userId] || {};
+        footprints[u.userId] = {
+          provinces: sanitizeProvinces(fp.provinces),
+          cities: sanitizeCities(fp.cities),
+          unlockedAchievements: sanitizeAchievements(fp.unlockedAchievements),
+          maxTitleLevel: sanitizeMaxTitle(fp.maxTitleLevel),
+          spots: sanitizeSpots(fp.spots),
+          memos: sanitizeMemos(fp.memos),
+          updatedAt: typeof fp.updatedAt === 'number' ? fp.updatedAt : Date.now(),
+        };
+      }
+      if (Array.isArray(raw.rooms)) {
+        for (const rr of raw.rooms) {
+          if (!rr || typeof rr !== 'object') continue;
+          const code = typeof rr.code === 'string' && /^\d{6}$/.test(rr.code) ? rr.code : '';
+          if (!code) continue;
+          rooms.push({
+            code,
+            name: typeof rr.name === 'string' && rr.name.trim() ? rr.name.trim().slice(0, 20) : '家庭房间',
+            role: rr.role === 'owner' ? 'owner' : 'member',
+            joinedAt: typeof rr.joinedAt === 'number' ? rr.joinedAt : Date.now(),
+            lastOpenedAt: typeof rr.lastOpenedAt === 'number' ? rr.lastOpenedAt : Date.now(),
+          });
+        }
+      }
+      const rawActive = typeof raw.activeUserId === 'string' ? raw.activeUserId : '';
+      activeUserId = users.some((u) => u.userId === rawActive) ? rawActive : (users[0]?.userId || '');
+      const rawRoom = typeof raw.activeRoomCode === 'string' && /^\d{6}$/.test(raw.activeRoomCode) ? raw.activeRoomCode : null;
+      activeRoomCode = rooms.some((r) => r.code === rawRoom) ? rawRoom : null;
+    } else {
+      // 从 v4 或更早版本迁移
+      const v4members = Array.isArray(raw.members) ? raw.members : [];
+      if (v4members.length === 0) {
+        // 全新用户：创建一个默认身份
+        const userId = 'u_' + Date.now().toString(36);
+        users = [{ userId, nickname: '我', color: MEMBER_COLORS[0].value, createdAt: Date.now(), updatedAt: Date.now() }];
+        footprints[userId] = { provinces: {}, cities: {}, unlockedAchievements: [], maxTitleLevel: 0, spots: {}, memos: {}, updatedAt: Date.now() };
+        activeUserId = userId;
+      } else {
+        // v4 members → v5 users + footprints（id 原样作为 userId，无需映射表）
+        for (let i = 0; i < Math.min(v4members.length, MAX_MEMBERS); i++) {
+          const rm = v4members[i];
+          if (!rm || typeof rm !== 'object') continue;
+          const userId = typeof rm.id === 'string' && rm.id ? rm.id : 'u_' + (i + 1);
+          const nickname = typeof rm.name === 'string' && rm.name.trim() ? rm.name.trim().slice(0, 16) : `成员${i + 1}`;
+          const color = typeof rm.color === 'string' && rm.color ? rm.color : MEMBER_COLORS[i % MEMBER_COLORS.length].value;
+          const updatedAt = typeof rm.updatedAt === 'number' ? rm.updatedAt : Date.now();
+          const fp = rm.footprint || {};
+          users.push({ userId, nickname, color, createdAt: updatedAt, updatedAt });
+          footprints[userId] = {
             provinces: sanitizeProvinces(fp.provinces),
             cities: sanitizeCities(fp.cities),
             unlockedAchievements: sanitizeAchievements(fp.unlockedAchievements),
             maxTitleLevel: sanitizeMaxTitle(fp.maxTitleLevel),
             spots: sanitizeSpots(fp.spots),
             memos: sanitizeMemos(fp.memos),
-          },
-        });
+            updatedAt,
+          };
+        }
+        if (users.length === 0) {
+          const userId = 'u_' + Date.now().toString(36);
+          users = [{ userId, nickname: '我', color: MEMBER_COLORS[0].value, createdAt: Date.now(), updatedAt: Date.now() }];
+          footprints[userId] = { provinces: {}, cities: {}, unlockedAchievements: [], maxTitleLevel: 0, spots: {}, memos: {}, updatedAt: Date.now() };
+        }
+        const rawCurr = typeof raw.currentMemberId === 'string' ? raw.currentMemberId : '';
+        activeUserId = users.some((u) => u.userId === rawCurr) ? rawCurr : users[0].userId;
       }
-
-      if (members.length === 0) {
-        const id = 'm_' + Date.now().toString(36);
-        members = [{
-          id,
-          name: '我',
-          color: MEMBER_COLORS[0].value,
-          updatedAt: Date.now(),
-          footprint: { provinces: {}, cities: {}, unlockedAchievements: [], maxTitleLevel: 0, spots: {}, memos: {} },
-        }];
+      // v4 roomCode → v5 rooms[]（单个房间，名称稍后从服务端补）
+      const v4room = typeof raw.roomCode === 'string' && /^\d{6}$/.test(raw.roomCode) ? raw.roomCode : null;
+      if (v4room) {
+        rooms = [{ code: v4room, name: '家庭房间', role: 'member', joinedAt: Date.now(), lastOpenedAt: Date.now() }];
+        activeRoomCode = v4room;
       }
-
-      const rawCurr = typeof raw.currentMemberId === 'string' ? raw.currentMemberId : '';
-      currentMemberId = members.some((m) => m.id === rawCurr) ? rawCurr : members[0].id;
     }
 
     this.state = {
-      version: 4,
+      version: 5,
       theme,
       soundEnabled,
-      roomCode,
-      currentMemberId,
-      members,
+      users,
+      footprints,
+      activeUserId,
+      rooms,
+      activeRoomCode,
       pkMode: false,
-      // 为保持单用户旧代码（如 main.js）平滑兼容，在 state 上映射当前活跃成员数据
+      // 兼容层：在 state 上映射当前活跃用户足迹（供 main.js 旧代码平滑过渡）
       provinces: {},
       cities: {},
       unlockedAchievements: [],
@@ -182,22 +221,22 @@ class Store {
     };
 
     this.listeners = new Set();
-    this._syncActiveMember();
-    // 首次迁移后持久化
-    if (!raw.members || raw.version !== 4) {
+    this._syncActiveUser();
+    // 迁移后持久化
+    if (raw.version !== 5) {
       this._commit();
     }
   }
 
-  _syncActiveMember() {
-    const member = this.getCurrentMember();
-    if (member && member.footprint) {
-      this.state.provinces = member.footprint.provinces;
-      this.state.cities = member.footprint.cities;
-      this.state.unlockedAchievements = member.footprint.unlockedAchievements;
-      this.state.maxTitleLevel = member.footprint.maxTitleLevel;
-      this.state.spots = member.footprint.spots || {};
-      this.state.memos = member.footprint.memos || {};
+  _syncActiveUser() {
+    const fp = this.getActiveFootprint();
+    if (fp) {
+      this.state.provinces = fp.provinces;
+      this.state.cities = fp.cities;
+      this.state.unlockedAchievements = fp.unlockedAchievements;
+      this.state.maxTitleLevel = fp.maxTitleLevel;
+      this.state.spots = fp.spots || {};
+      this.state.memos = fp.memos || {};
     }
   }
 
@@ -207,15 +246,17 @@ class Store {
   }
 
   _commit(skipNotify = false) {
-    this._syncActiveMember();
-    // 写入 localStorage
+    this._syncActiveUser();
+    // 写入 localStorage（v5 结构）
     const snapshot = {
-      version: 4,
+      version: 5,
       theme: this.state.theme,
       soundEnabled: this.state.soundEnabled,
-      roomCode: this.state.roomCode,
-      currentMemberId: this.state.currentMemberId,
-      members: this.state.members,
+      users: this.state.users,
+      activeUserId: this.state.activeUserId,
+      footprints: this.state.footprints,
+      rooms: this.state.rooms,
+      activeRoomCode: this.state.activeRoomCode,
     };
     storage.write(snapshot);
 
@@ -226,157 +267,223 @@ class Store {
     }
   }
 
-  /* ========== 成员档案管理 ========== */
+  /* ========== 用户身份管理（v5） ========== */
 
-  getMembers() {
-    return this.state.members;
+  getUsers() {
+    return this.state.users;
   }
 
-  getCurrentMember() {
-    return this.state.members.find((m) => m.id === this.state.currentMemberId) || this.state.members[0];
+  getActiveUser() {
+    return this.state.users.find((u) => u.userId === this.state.activeUserId) || this.state.users[0];
   }
 
-  getCurrentMemberId() {
-    return this.state.currentMemberId;
+  getActiveUserId() {
+    return this.state.activeUserId;
   }
 
-  setCurrentMember(id) {
-    if (!this.state.members.some((m) => m.id === id)) return false;
-    if (this.state.currentMemberId === id) return true;
-    this.state.currentMemberId = id;
+  getActiveFootprint() {
+    return this.state.footprints[this.state.activeUserId] || null;
+  }
+
+  setActiveUser(userId) {
+    if (!this.state.users.some((u) => u.userId === userId)) return false;
+    if (this.state.activeUserId === userId) return true;
+    this.state.activeUserId = userId;
     this._commit();
     return true;
   }
 
-  addMember(name, color = '') {
-    if (this.state.members.length >= MAX_MEMBERS) return null;
-    const cleanName = (name || '').trim().slice(0, 16) || `成员${this.state.members.length + 1}`;
+  addUser(nickname, color = '') {
+    if (this.state.users.length >= MAX_MEMBERS) return null;
+    const cleanName = (nickname || '').trim().slice(0, 16) || `成员${this.state.users.length + 1}`;
 
     let assignedColor = color;
     if (!assignedColor) {
-      const usedColors = new Set(this.state.members.map((m) => m.color));
+      const usedColors = new Set(this.state.users.map((u) => u.color));
       const available = MEMBER_COLORS.find((c) => !usedColors.has(c.value));
-      assignedColor = available ? available.value : MEMBER_COLORS[this.state.members.length % MEMBER_COLORS.length].value;
+      assignedColor = available ? available.value : MEMBER_COLORS[this.state.users.length % MEMBER_COLORS.length].value;
     }
 
-    const newMember = {
-      id: 'm_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-      name: cleanName,
-      color: assignedColor,
-      updatedAt: Date.now(),
-      footprint: {
-        provinces: {},
-        cities: {},
-        unlockedAchievements: [],
-        maxTitleLevel: 0,
-        spots: {},
-        memos: {},
-      },
+    const userId = 'u_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    const now = Date.now();
+    this.state.users.push({ userId, nickname: cleanName, color: assignedColor, createdAt: now, updatedAt: now });
+    this.state.footprints[userId] = {
+      provinces: {}, cities: {}, unlockedAchievements: [], maxTitleLevel: 0,
+      spots: {}, memos: {}, updatedAt: now,
     };
-
-    this.state.members.push(newMember);
-    this.state.currentMemberId = newMember.id;
+    this.state.activeUserId = userId;
     this._commit();
-    return newMember;
+    return this.getActiveUser();
   }
 
-  removeMember(id) {
-    if (this.state.members.length <= 1) return false; // 至少保留 1 位成员
-    const index = this.state.members.findIndex((m) => m.id === id);
+  removeUser(userId) {
+    if (this.state.users.length <= 1) return false;
+    const index = this.state.users.findIndex((u) => u.userId === userId);
     if (index === -1) return false;
-
-    this.state.members.splice(index, 1);
-    if (this.state.currentMemberId === id) {
-      this.state.currentMemberId = this.state.members[0].id;
+    this.state.users.splice(index, 1);
+    delete this.state.footprints[userId];
+    if (this.state.activeUserId === userId) {
+      this.state.activeUserId = this.state.users[0].userId;
     }
     this._commit();
     return true;
   }
 
-  updateMember(id, fields = {}) {
-    const member = this.state.members.find((m) => m.id === id);
-    if (!member) return false;
+  updateUser(userId, fields = {}) {
+    const user = this.state.users.find((u) => u.userId === userId);
+    if (!user) return false;
     let changed = false;
-
-    if (typeof fields.name === 'string' && fields.name.trim()) {
-      member.name = fields.name.trim().slice(0, 16);
+    if (typeof fields.nickname === 'string' && fields.nickname.trim()) {
+      user.nickname = fields.nickname.trim().slice(0, 16);
       changed = true;
     }
     if (typeof fields.color === 'string' && fields.color) {
-      member.color = fields.color;
+      user.color = fields.color;
       changed = true;
     }
     if (changed) {
-      member.updatedAt = Date.now();
+      user.updatedAt = Date.now();
       this._commit();
     }
     return true;
   }
 
-  /* ========== 房间管理与远程合并 ========== */
+  /* ========== 房间管理（v5） ========== */
 
-  getRoomCode() {
-    return this.state.roomCode;
+  getRooms() {
+    return [...this.state.rooms].sort((a, b) => b.lastOpenedAt - a.lastOpenedAt);
   }
 
-  setRoomCode(code) {
-    this.state.roomCode = code && /^\d{6}$/.test(code) ? code : null;
+  getActiveRoomCode() {
+    return this.state.activeRoomCode;
+  }
+
+  getActiveRoom() {
+    return this.state.rooms.find((r) => r.code === this.state.activeRoomCode) || null;
+  }
+
+  addRoom(code, name = '家庭房间', role = 'member') {
+    const c = String(code);
+    if (!/^\d{6}$/.test(c)) return false;
+    const existing = this.state.rooms.find((r) => r.code === c);
+    const now = Date.now();
+    if (existing) {
+      existing.lastOpenedAt = now;
+      if (name && name.trim()) existing.name = name.trim().slice(0, 20);
+    } else {
+      this.state.rooms.push({
+        code: c,
+        name: (name || '').trim().slice(0, 20) || '家庭房间',
+        role: role === 'owner' ? 'owner' : 'member',
+        joinedAt: now,
+        lastOpenedAt: now,
+      });
+    }
+    this.state.activeRoomCode = c;
     this._commit();
+    return true;
   }
 
-  mergeRemoteMembers(remoteMembers) {
-    if (!Array.isArray(remoteMembers) || remoteMembers.length === 0) return;
-
-    let localChanged = false;
-    const localMap = new Map(this.state.members.map((m) => [m.id, m]));
-
-    for (const rm of remoteMembers) {
-      if (!rm || !rm.id) continue;
-      const local = localMap.get(rm.id);
-
-      if (!local) {
-        if (this.state.members.length < MAX_MEMBERS) {
-          const newM = {
-            id: rm.id,
-            name: rm.name || '家人',
-            color: rm.color || MEMBER_COLORS[this.state.members.length % MEMBER_COLORS.length].value,
-            updatedAt: rm.updatedAt || Date.now(),
-            footprint: {
-              provinces: sanitizeProvinces(rm.footprint?.provinces),
-              cities: sanitizeCities(rm.footprint?.cities),
-              unlockedAchievements: sanitizeAchievements(rm.footprint?.unlockedAchievements),
-              maxTitleLevel: sanitizeMaxTitle(rm.footprint?.maxTitleLevel),
-              spots: sanitizeSpots(rm.footprint?.spots),
-              memos: sanitizeMemos(rm.footprint?.memos),
-            },
-          };
-          this.state.members.push(newM);
-          localChanged = true;
-        }
-      } else {
-        // 若云端更新时间比本地更新，合并覆盖本地
-        const remoteTime = rm.updatedAt || 0;
-        const localTime = local.updatedAt || 0;
-        if (remoteTime > localTime) {
-          local.name = rm.name || local.name;
-          local.color = rm.color || local.color;
-          local.updatedAt = remoteTime;
-          local.footprint = {
-            provinces: sanitizeProvinces(rm.footprint?.provinces),
-            cities: sanitizeCities(rm.footprint?.cities),
-            unlockedAchievements: sanitizeAchievements(rm.footprint?.unlockedAchievements),
-            maxTitleLevel: sanitizeMaxTitle(rm.footprint?.maxTitleLevel),
-            spots: sanitizeSpots(rm.footprint?.spots),
-              memos: sanitizeMemos(rm.footprint?.memos),
-          };
-          localChanged = true;
-        }
-      }
+  removeRoom(code) {
+    const index = this.state.rooms.findIndex((r) => r.code === code);
+    if (index === -1) return false;
+    this.state.rooms.splice(index, 1);
+    if (this.state.activeRoomCode === code) {
+      this.state.activeRoomCode = null;
     }
+    this._commit();
+    return true;
+  }
 
-    if (localChanged) {
+  setActiveRoom(code) {
+    if (code !== null && !this.state.rooms.some((r) => r.code === code)) return false;
+    this.state.activeRoomCode = code;
+    if (code) {
+      const room = this.state.rooms.find((r) => r.code === code);
+      if (room) room.lastOpenedAt = Date.now();
+    }
+    this._commit();
+    return true;
+  }
+
+  updateRoomName(code, name) {
+    const room = this.state.rooms.find((r) => r.code === code);
+    if (!room || !name || !name.trim()) return false;
+    room.name = name.trim().slice(0, 20);
+    this._commit();
+    return true;
+  }
+
+  /* ========== 兼容层（供 main.js 旧代码过渡） ========== */
+
+  /** @deprecated 用 getUsers() */
+  getMembers() {
+    return this.state.users.map((u) => ({
+      id: u.userId, name: u.nickname, color: u.color, updatedAt: u.updatedAt,
+      footprint: this.state.footprints[u.userId] || {},
+    }));
+  }
+
+  /** @deprecated 用 getActiveUser() */
+  getCurrentMember() {
+    const u = this.getActiveUser();
+    if (!u) return null;
+    return {
+      id: u.userId, name: u.nickname, color: u.color, updatedAt: u.updatedAt,
+      footprint: this.state.footprints[u.userId] || {},
+    };
+  }
+
+  /** @deprecated 用 getActiveUserId() */
+  getCurrentMemberId() {
+    return this.state.activeUserId;
+  }
+
+  /** @deprecated 用 setActiveUser() */
+  setCurrentMember(id) {
+    return this.setActiveUser(id);
+  }
+
+  /** @deprecated 用 addUser() */
+  addMember(name, color = '') {
+    const u = this.addUser(name, color);
+    return u ? this.getCurrentMember() : null;
+  }
+
+  /** @deprecated 用 removeUser() */
+  removeMember(id) {
+    return this.removeUser(id);
+  }
+
+  /** @deprecated 用 updateUser() */
+  updateMember(id, fields = {}) {
+    const mapped = {};
+    if (fields.name !== undefined) mapped.nickname = fields.name;
+    if (fields.color !== undefined) mapped.color = fields.color;
+    return this.updateUser(id, mapped);
+  }
+
+  /** @deprecated 用 getActiveRoomCode() */
+  getRoomCode() {
+    return this.state.activeRoomCode;
+  }
+
+  /** @deprecated 用 addRoom() / setActiveRoom() */
+  setRoomCode(code) {
+    if (!code) {
+      this.state.activeRoomCode = null;
       this._commit();
+      return;
     }
+    this.addRoom(code, '家庭房间', 'member');
+  }
+
+  /**
+   * @deprecated v5 不再合并远程成员到本地。"我的档案"与"房间成员"彻底分离。
+   * 房间成员改为只读视图，由 sync.js 直接管理。此方法保留为空操作以防旧代码调用。
+   */
+  mergeRemoteMembers(remoteMembers) {
+    return;
   }
 
   /* ========== PK 透视统计 ========== */
@@ -396,7 +503,7 @@ class Store {
   }
 
   getPkStats() {
-    const members = this.state.members;
+    const members = this.getMembers(); // v5 兼容层：本地用户（房间成员视图由 sync.js 单独管理）
     const provinceMap = {}; // adcode -> { litMembers: [{ id, name, color }], isFamily: boolean }
 
     // 统计每人点亮数和独占省份
