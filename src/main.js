@@ -2,12 +2,12 @@
  * 点亮中国 · 入口：组装地图 / 状态 / 视听反馈与交互
  * 包含 Phase 2（音效/粒子/成就/城市下钻/称号/主题）与 Phase 3（多用户云同步/PK透视对战）
  */
-import { TOTAL_PROVINCES, MAX_MEMBERS, MEMBER_COLORS } from './config.js?v=20261005h';
-import { loadGeo, loadCityGeo, isCityGeoLoaded, getLoadedCityGeo } from './geo.js?v=20261005h';
-import { store } from './store.js?v=20261005h';
-import { buildMainMap, buildInset, applyThemeVars } from './map.js?v=20261005h';
-import { ensureCtx, setEnabled as setAudioEnabled, playLight, playUnlight, playAchievement } from './audio.js?v=20261005h';
-import { initParticles, burst as burstParticles, confetti as confettiParticles, setParticlesTheme, resizeParticles } from './particles.js?v=20261005h';
+import { TOTAL_PROVINCES, MAX_MEMBERS, MEMBER_COLORS } from './config.js?v=20261005i';
+import { loadGeo, loadCityGeo, isCityGeoLoaded, getLoadedCityGeo } from './geo.js?v=20261005i';
+import { store } from './store.js?v=20261005i';
+import { buildMainMap, buildInset, applyThemeVars } from './map.js?v=20261005i';
+import { ensureCtx, setEnabled as setAudioEnabled, playLight, playUnlight, playAchievement } from './audio.js?v=20261005i';
+import { initParticles, burst as burstParticles, confetti as confettiParticles, setParticlesTheme, resizeParticles } from './particles.js?v=20261005i';
 import {
   TITLES,
   ACHIEVEMENTS,
@@ -15,7 +15,7 @@ import {
   initProvinceAdcodes,
   getAdcode,
   checkAchievements,
-} from './achievements.js?v=20261005h';
+} from './achievements.js?v=20261005i';
 import {
   loadSpots,
   getSpotTotal,
@@ -24,8 +24,8 @@ import {
   getSpotTitleByCount,
   SPOT_TITLES,
   CAT_LABELS,
-} from './spots.js?v=20261005h';
-import { loadPoetry, getPoetry } from './poetry.js?v=20261005h';
+} from './spots.js?v=20261005i';
+import { loadPoetry, getPoetry } from './poetry.js?v=20261005i';
 import {
   initSync,
   createRoom,
@@ -34,7 +34,7 @@ import {
   putMember as putRemoteMember,
   deleteMember as deleteRemoteMember,
   subscribeSyncStatus,
-} from './sync.js?v=20261005h';
+} from './sync.js?v=20261005i';
 
 const $ = (id) => document.getElementById(id);
 const isTouch = matchMedia('(pointer: coarse)').matches;
@@ -1678,9 +1678,11 @@ $('memo-save').addEventListener('click', (e) => {
   e.stopPropagation();
   if (!memoCityAdcode) return;
   const text = $('memo-text').value;
+  const cname = memoCityName;
+  const had = Boolean(text.trim());
   store.setMemo(memoCityAdcode, text);
   hideMemoCard();
-  toast(text.trim() ? `💭 已记下${memoCityName}的记忆` : `💭 已删除${memoCityName}的记忆`);
+  toast(had ? `💭 已记下${cname}的记忆` : `💭 已删除${cname}的记忆`);
 });
 
 $('memo-clear').addEventListener('click', (e) => {

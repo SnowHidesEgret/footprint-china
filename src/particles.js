@@ -3,7 +3,7 @@
  * 高性能对象池复用，平时零 rAF 开销，支持点亮爆裂与里程碑全屏彩带
  */
 
-import { THEMES } from './config.js?v=20261005h';
+import { THEMES } from './config.js?v=20261005i';
 
 const POOL_SIZE = 320;
 const pool = [];
