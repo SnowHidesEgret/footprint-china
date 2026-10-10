@@ -2,10 +2,10 @@
  * 点亮中国 · 状态管理（单向 Store，支持 Phase 3 多用户与云同步）
  * 本地多成员隔离 + 老数据平滑迁移 + 离线缓存
  */
-import { TOTAL_PROVINCES, MAX_MEMBERS, MEMBER_COLORS } from './config.js?v=20261005g';
-import { storage } from './geo.js?v=20261005g';
-import { KNOWN_ACHIEVEMENTS } from './achievements.js?v=20261005g';
-import { spotKey } from './spots.js?v=20261005g';
+import { TOTAL_PROVINCES, MAX_MEMBERS, MEMBER_COLORS } from './config.js?v=20261005h';
+import { storage } from './geo.js?v=20261005h';
+import { KNOWN_ACHIEVEMENTS } from './achievements.js?v=20261005h';
+import { spotKey } from './spots.js?v=20261005h';
 
 const VALID_THEMES = ['dark', 'light'];
 
@@ -75,6 +75,24 @@ function sanitizeSpots(rawSpots) {
   return spots;
 }
 
+/** 清洗城市记忆：{ adcode: { text, updatedAt } } */
+function sanitizeMemos(rawMemos) {
+  const memos = {};
+  if (!rawMemos || typeof rawMemos !== 'object' || Array.isArray(rawMemos)) {
+    return memos;
+  }
+  for (const [key, val] of Object.entries(rawMemos)) {
+    const k = typeof key === 'string' ? key.trim() : '';
+    if (!/^\d{4,6}$/.test(k)) continue;
+    if (!val || typeof val !== 'object') continue;
+    const text = typeof val.text === 'string' ? val.text.trim().slice(0, 200) : '';
+    if (!text) continue;
+    const updatedAt = typeof val.updatedAt === 'number' && val.updatedAt > 0 ? val.updatedAt : Date.now();
+    memos[k] = { text, updatedAt };
+  }
+  return memos;
+}
+
 class Store {
   constructor() {
     const raw = storage.read() || {};
@@ -99,6 +117,7 @@ class Store {
           unlockedAchievements: sanitizeAchievements(raw.unlockedAchievements),
           maxTitleLevel: sanitizeMaxTitle(raw.maxTitleLevel),
           spots: sanitizeSpots(raw.spots),
+          memos: sanitizeMemos(raw.memos),
         },
       };
       members = [migratedMember];
@@ -125,6 +144,7 @@ class Store {
             unlockedAchievements: sanitizeAchievements(fp.unlockedAchievements),
             maxTitleLevel: sanitizeMaxTitle(fp.maxTitleLevel),
             spots: sanitizeSpots(fp.spots),
+            memos: sanitizeMemos(fp.memos),
           },
         });
       }
@@ -136,7 +156,7 @@ class Store {
           name: '我',
           color: MEMBER_COLORS[0].value,
           updatedAt: Date.now(),
-          footprint: { provinces: {}, cities: {}, unlockedAchievements: [], maxTitleLevel: 0, spots: {} },
+          footprint: { provinces: {}, cities: {}, unlockedAchievements: [], maxTitleLevel: 0, spots: {}, memos: {} },
         }];
       }
 
@@ -145,7 +165,7 @@ class Store {
     }
 
     this.state = {
-      version: 3,
+      version: 4,
       theme,
       soundEnabled,
       roomCode,
@@ -158,12 +178,13 @@ class Store {
       unlockedAchievements: [],
       maxTitleLevel: 0,
       spots: {},
+      memos: {},
     };
 
     this.listeners = new Set();
     this._syncActiveMember();
     // 首次迁移后持久化
-    if (!raw.members || raw.version !== 3) {
+    if (!raw.members || raw.version !== 4) {
       this._commit();
     }
   }
@@ -176,6 +197,7 @@ class Store {
       this.state.unlockedAchievements = member.footprint.unlockedAchievements;
       this.state.maxTitleLevel = member.footprint.maxTitleLevel;
       this.state.spots = member.footprint.spots || {};
+      this.state.memos = member.footprint.memos || {};
     }
   }
 
@@ -188,7 +210,7 @@ class Store {
     this._syncActiveMember();
     // 写入 localStorage
     const snapshot = {
-      version: 3,
+      version: 4,
       theme: this.state.theme,
       soundEnabled: this.state.soundEnabled,
       roomCode: this.state.roomCode,
@@ -248,6 +270,7 @@ class Store {
         unlockedAchievements: [],
         maxTitleLevel: 0,
         spots: {},
+        memos: {},
       },
     };
 
@@ -324,6 +347,7 @@ class Store {
               unlockedAchievements: sanitizeAchievements(rm.footprint?.unlockedAchievements),
               maxTitleLevel: sanitizeMaxTitle(rm.footprint?.maxTitleLevel),
               spots: sanitizeSpots(rm.footprint?.spots),
+              memos: sanitizeMemos(rm.footprint?.memos),
             },
           };
           this.state.members.push(newM);
@@ -343,6 +367,7 @@ class Store {
             unlockedAchievements: sanitizeAchievements(rm.footprint?.unlockedAchievements),
             maxTitleLevel: sanitizeMaxTitle(rm.footprint?.maxTitleLevel),
             spots: sanitizeSpots(rm.footprint?.spots),
+              memos: sanitizeMemos(rm.footprint?.memos),
           };
           localChanged = true;
         }
@@ -553,6 +578,35 @@ class Store {
     const member = this.getCurrentMember();
     const spots = member.footprint.spots || {};
     return Object.keys(spots).length;
+  }
+
+  /** 取城市记忆 */
+  getMemo(adcode) {
+    const member = this.getCurrentMember();
+    const memos = member.footprint.memos || {};
+    const m = memos[String(adcode)];
+    return m && m.text ? m.text : '';
+  }
+
+  /** 写城市记忆（空文本则删除） */
+  setMemo(adcode, text) {
+    const member = this.getCurrentMember();
+    if (!member.footprint.memos) member.footprint.memos = {};
+    const key = String(adcode);
+    const t = (text || '').trim().slice(0, 200);
+    if (!t) {
+      delete member.footprint.memos[key];
+    } else {
+      member.footprint.memos[key] = { text: t, updatedAt: Date.now() };
+    }
+    member.updatedAt = Date.now();
+    this._commit();
+    return true;
+  }
+
+  /** 是否有城市记忆 */
+  hasMemo(adcode) {
+    return Boolean(this.getMemo(adcode));
   }
 
   setTheme(theme) {

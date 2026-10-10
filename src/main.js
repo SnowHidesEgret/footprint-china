@@ -2,12 +2,12 @@
  * 点亮中国 · 入口：组装地图 / 状态 / 视听反馈与交互
  * 包含 Phase 2（音效/粒子/成就/城市下钻/称号/主题）与 Phase 3（多用户云同步/PK透视对战）
  */
-import { TOTAL_PROVINCES, MAX_MEMBERS, MEMBER_COLORS } from './config.js?v=20261005g';
-import { loadGeo, loadCityGeo, isCityGeoLoaded, getLoadedCityGeo } from './geo.js?v=20261005g';
-import { store } from './store.js?v=20261005g';
-import { buildMainMap, buildInset, applyThemeVars } from './map.js?v=20261005g';
-import { ensureCtx, setEnabled as setAudioEnabled, playLight, playUnlight, playAchievement } from './audio.js?v=20261005g';
-import { initParticles, burst as burstParticles, confetti as confettiParticles, setParticlesTheme, resizeParticles } from './particles.js?v=20261005g';
+import { TOTAL_PROVINCES, MAX_MEMBERS, MEMBER_COLORS } from './config.js?v=20261005h';
+import { loadGeo, loadCityGeo, isCityGeoLoaded, getLoadedCityGeo } from './geo.js?v=20261005h';
+import { store } from './store.js?v=20261005h';
+import { buildMainMap, buildInset, applyThemeVars } from './map.js?v=20261005h';
+import { ensureCtx, setEnabled as setAudioEnabled, playLight, playUnlight, playAchievement } from './audio.js?v=20261005h';
+import { initParticles, burst as burstParticles, confetti as confettiParticles, setParticlesTheme, resizeParticles } from './particles.js?v=20261005h';
 import {
   TITLES,
   ACHIEVEMENTS,
@@ -15,7 +15,7 @@ import {
   initProvinceAdcodes,
   getAdcode,
   checkAchievements,
-} from './achievements.js?v=20261005g';
+} from './achievements.js?v=20261005h';
 import {
   loadSpots,
   getSpotTotal,
@@ -24,8 +24,8 @@ import {
   getSpotTitleByCount,
   SPOT_TITLES,
   CAT_LABELS,
-} from './spots.js?v=20261005g';
-import { loadPoetry, getPoetry } from './poetry.js?v=20261005g';
+} from './spots.js?v=20261005h';
+import { loadPoetry, getPoetry } from './poetry.js?v=20261005h';
 import {
   initSync,
   createRoom,
@@ -34,7 +34,7 @@ import {
   putMember as putRemoteMember,
   deleteMember as deleteRemoteMember,
   subscribeSyncStatus,
-} from './sync.js?v=20261005g';
+} from './sync.js?v=20261005h';
 
 const $ = (id) => document.getElementById(id);
 const isTouch = matchMedia('(pointer: coarse)').matches;
@@ -506,6 +506,28 @@ function hideCitySpotsCard() {
   card.setAttribute('aria-hidden', 'true');
 }
 
+/* ---------- 城市记忆 ---------- */
+let memoCityAdcode = '';
+let memoCityName = '';
+function showMemoCard(cname, cadcode) {
+  memoCityAdcode = String(cadcode);
+  memoCityName = cname;
+  $('memo-title').textContent = `${cname} 的记忆`;
+  $('memo-text').value = store.getMemo(memoCityAdcode);
+  const card = $('memo-card');
+  card.classList.add('show');
+  card.setAttribute('aria-hidden', 'false');
+  setTimeout(() => $('memo-text').focus(), 100);
+}
+function hideMemoCard() {
+  const card = $('memo-card');
+  if (!card) return;
+  card.classList.remove('show');
+  card.setAttribute('aria-hidden', 'true');
+  memoCityAdcode = '';
+  memoCityName = '';
+}
+
 /* ---------- toast ---------- */
 let toastTimer = null;
 function toast(html) {
@@ -621,6 +643,15 @@ function showPopover(name, x, y, isCity = false, feature = null) {
   const drillBtn = $('popover-drill');
   if (drillBtn) {
     drillBtn.style.display = isCity ? 'none' : '';
+  }
+  const memoBtn = $('popover-memo');
+  if (memoBtn) {
+    memoBtn.style.display = isCity ? '' : 'none';
+    // 有记忆则按钮显示已写标记
+    if (isCity && pendingUnlight) {
+      const has = store.hasMemo(pendingUnlight.adcode);
+      memoBtn.textContent = has ? '💭 记忆 ✓' : '💭 记忆';
+    }
   }
   const popoverWidth = popover.offsetWidth || 180;
   const pad = Math.floor(popoverWidth / 2) + 12;
@@ -1634,6 +1665,38 @@ $('popover-cancel').addEventListener('click', (e) => {
   hidePopover();
 });
 
+$('popover-memo').addEventListener('click', (e) => {
+  e.stopPropagation();
+  if (pendingUnlight && pendingUnlight.isCity) {
+    const { name, adcode } = pendingUnlight;
+    hidePopover();
+    showMemoCard(name, adcode);
+  }
+});
+
+$('memo-save').addEventListener('click', (e) => {
+  e.stopPropagation();
+  if (!memoCityAdcode) return;
+  const text = $('memo-text').value;
+  store.setMemo(memoCityAdcode, text);
+  hideMemoCard();
+  toast(text.trim() ? `💭 已记下${memoCityName}的记忆` : `💭 已删除${memoCityName}的记忆`);
+});
+
+$('memo-clear').addEventListener('click', (e) => {
+  e.stopPropagation();
+  if (!memoCityAdcode) return;
+  const cname = memoCityName;
+  store.setMemo(memoCityAdcode, '');
+  hideMemoCard();
+  toast(`💭 已删除${cname}的记忆`);
+});
+
+$('memo-close').addEventListener('click', (e) => {
+  e.stopPropagation();
+  hideMemoCard();
+});
+
 popover.addEventListener('click', (e) => {
   e.stopPropagation();
 });
@@ -1760,6 +1823,10 @@ function createMapCallbacks() {
       }
       if ($('city-spots-card') && $('city-spots-card').classList.contains('show')) {
         hideCitySpotsCard();
+        return;
+      }
+      if ($('memo-card') && $('memo-card').classList.contains('show')) {
+        hideMemoCard();
         return;
       }
       if (spotMode) {

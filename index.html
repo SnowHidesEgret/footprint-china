@@ -7,7 +7,7 @@
 <meta name="description" content="交互式中国地图足迹：点击你去过的省份，点亮属于你的山河版图。">
 <meta name="theme-color" content="#080c16">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗺️</text></svg>">
-<link rel="stylesheet" href="styles.css?v=20261005g">
+<link rel="stylesheet" href="styles.css?v=20261005h">
 <script type="importmap">
 { "imports": { "d3-geo": "https://esm.sh/d3-geo@3.1.1" } }
 </script>
@@ -94,6 +94,7 @@
   <div class="q">熄灭 <b id="popover-name"></b> 的光芒？</div>
   <div class="row">
     <button id="popover-drill" type="button">探索城市</button>
+    <button id="popover-memo" type="button">💭 记忆</button>
     <button id="popover-cancel" type="button">保留</button>
     <button class="danger" id="popover-ok" type="button">熄灭</button>
   </div>
@@ -122,6 +123,17 @@
   <button class="bottom-card-close" id="city-spots-close" type="button" aria-label="关闭">&times;</button>
   <h3 id="city-spots-title"></h3>
   <ul class="city-spots-list" id="city-spots-list"></ul>
+</div>
+
+<!-- 城市记忆编辑器 -->
+<div id="memo-card" class="bottom-card" role="dialog" aria-modal="false" aria-labelledby="memo-title" aria-hidden="true">
+  <button class="bottom-card-close" id="memo-close" type="button" aria-label="关闭">&times;</button>
+  <h3 id="memo-title"></h3>
+  <textarea id="memo-text" rows="3" maxlength="200" placeholder="写下一句话，记住这次旅行…"></textarea>
+  <div class="memo-actions">
+    <button id="memo-save" type="button">保存记忆</button>
+    <button id="memo-clear" type="button" class="danger-text">删除</button>
+  </div>
 </div>
 
 <!-- 成就解锁中央弹窗 -->
@@ -243,6 +255,6 @@
   </div>
 </div>
 
-<script type="module" src="src/main.js?v=20261005g"></script>
+<script type="module" src="src/main.js?v=20261005h"></script>
 </body>
 </html>

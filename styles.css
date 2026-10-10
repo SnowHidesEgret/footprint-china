@@ -2242,6 +2242,50 @@ body.spot-mode #inset-wrap {
   flex-direction: column;
   gap: 6px;
 }
+/* 城市记忆编辑器 */
+#memo-text {
+  width: 100%;
+  box-sizing: border-box;
+  margin: 10px 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(148,163,184,.2);
+  background: rgba(255,255,255,.04);
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.6;
+  resize: vertical;
+  font-family: inherit;
+}
+#memo-text:focus {
+  outline: none;
+  border-color: var(--lit-stroke);
+}
+.memo-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+.memo-actions button {
+  padding: 8px 18px;
+  border-radius: 999px;
+  border: 1px solid rgba(148,163,184,.25);
+  background: rgba(255,255,255,.05);
+  color: var(--text);
+  font-size: 14px;
+  cursor: pointer;
+}
+#memo-save {
+  background: var(--lit-stroke);
+  border-color: var(--lit-stroke);
+  color: #1a1a1a;
+  font-weight: 600;
+}
+.memo-actions .danger-text {
+  color: #e57373;
+  background: transparent;
+  border-color: transparent;
+}
 .city-spot-item {
   display: flex;
   align-items: center;
