@@ -216,6 +216,19 @@ export default {
         memberObj.updatedAt = Date.now();
 
         await env.ROOMS_KV.put(memberKey, JSON.stringify(memberObj));
+
+        // 自愈：确保成员 ID 在房间名单中（防止名单与数据不一致）
+        try {
+          const roomRaw = await env.ROOMS_KV.get(`room:${code}`);
+          if (roomRaw) {
+            const room = JSON.parse(roomRaw);
+            if (Array.isArray(room.memberIds) && !room.memberIds.includes(memberId)) {
+              room.memberIds.push(memberId);
+              await env.ROOMS_KV.put(`room:${code}`, JSON.stringify(room));
+            }
+          }
+        } catch {}
+
         return jsonResponse({ ok: true });
       }
 
