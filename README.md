@@ -123,3 +123,15 @@ python3 -m http.server 8000
 ## 设计文档
 
 详见 [DESIGN.md](DESIGN.md)。
+
+### 第七期：用户系统重构 Phase 1（2026-10-10，v=20261005k）
+- 轻量用户身份：UUID + 昵称，无密码；足迹跟人走（不再绑定房间）
+- 大厅视图：身份区、用户切换、我的房间列表、建房/加房（点击顶部"家庭"按钮进入）
+- 加入房间先预览（房间名+成员昵称），确认后再进；同昵称检测提示认领
+- 房间：有名字、有房主；成员上限 6→8 人，配色补到 8 款（新增竹青、月白）
+- Store v5：`users[]` + `footprints{}` + `rooms[]`，v4 自动迁移
+- Worker v5 API：`PUT/GET /api/users/:id`、`POST /api/rooms`（`{name, ownerUserId}`）、
+  `POST /join`（`{userId}` 幂等）、`POST /claim`（认领合并）、`POST /leave`（退出）、
+  `DELETE /members/:id`（移出不删用户）、`PATCH /rooms`（改名/转让）；旧 API 双语兼容
+- KV 迁移：`user:{id}` + 新 `room:{code}`，旧成员键保留可回滚；542591 房主=爸爸（足迹最多）
+- 结构性修复：房间成员实时读用户档案，废除快照键，"名单与数据不一致"类 bug 不可能再发生
