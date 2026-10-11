@@ -89,6 +89,10 @@ function renderRooms() {
   list.innerHTML = rooms.map((r) => {
     const cached = memberCountCache.get(r.code);
     const countText = cached ? `${cached.count} 人` : '…';
+    const pwdBtn = r.role === 'owner'
+      ? `<button type="button" class="lobby-room-leave" data-action="password" data-room-code="${esc(r.code)}"
+        aria-label="重设${esc(r.name)}密码" title="重设密码">密码</button>`
+      : '';
     return `
     <div class="lobby-room-item${r.code === activeCode ? ' active' : ''}" data-room-code="${esc(r.code)}">
       <button type="button" class="lobby-room-main" data-action="enter" data-room-code="${esc(r.code)}">
@@ -99,6 +103,7 @@ function renderRooms() {
           <span>·</span><span>${relTime(r.lastOpenedAt)}</span>
         </div>
       </button>
+      ${pwdBtn}
       <button type="button" class="lobby-room-leave" data-action="leave" data-room-code="${esc(r.code)}"
         aria-label="退出${esc(r.name)}" title="退出房间">退出</button>
     </div>`;
@@ -196,6 +201,12 @@ function startRename() {
 async function doCreateRoom() {
   const nameInput = $('lobby-create-name');
   const name = (nameInput.value || '').trim() || '我们家';
+  const pwdInput = $('lobby-create-password');
+  const password = (pwdInput.value || '').trim();
+  if (password && !/^\d{4}$/.test(password)) {
+    notify('密码必须为 4 位数字');
+    return;
+  }
   const user = storeRef.getActiveUser();
   if (!user) return;
 
@@ -203,11 +214,15 @@ async function doCreateRoom() {
   btn.disabled = true;
   btn.textContent = '创建中…';
   try {
-    const res = await syncRef.createRoom(name, user.userId);
+    const res = await syncRef.createRoom(name, user.userId, password);
     if (res && res.code) {
       storeRef.addRoom(res.code, name, 'owner');
       memberCountCache.set(res.code, { count: 1, at: Date.now() });
-      notify(`房间「${name}」创建成功，房间码 ${res.code}`);
+      const pwdTip = password ? `，加入密码：${password}` : '（未设密码，用房间码加入）';
+      notify(`房间「${name}」创建成功，房间码 ${res.code}${pwdTip}`);
+      // 清空输入
+      nameInput.value = '';
+      if (pwdInput) pwdInput.value = '';
       enterRoom(res.code);
     } else {
       notify('创建失败，请检查网络后重试');
@@ -226,18 +241,35 @@ let pendingJoin = null; // { code, data }
 
 async function doPreviewJoin() {
   const codeInput = $('lobby-join-code');
-  const code = (codeInput.value || '').trim();
-  if (!/^\d{6}$/.test(code)) {
-    notify('请输入 6 位数字房间码');
+  const input = (codeInput.value || '').trim();
+  if (!input) {
+    notify('请输入房间码或密码');
     return;
   }
   const btn = $('lobby-join-preview-btn');
   btn.disabled = true;
   btn.textContent = '查找中…';
   try {
+    let code = input;
+    // 4 位数字按密码查，6 位数字按房间码
+    if (/^\d{4}$/.test(input)) {
+      if (typeof syncRef.getRoomByPassword !== 'function') {
+        notify('当前版本不支持密码加入，请更新后重试');
+        return;
+      }
+      const pwdRes = await syncRef.getRoomByPassword(input);
+      if (!pwdRes || !pwdRes.code) {
+        notify('密码不正确或房间不存在');
+        return;
+      }
+      code = pwdRes.code;
+    } else if (!/^\d{6}$/.test(input)) {
+      notify('请输入 6 位房间码或 4 位密码');
+      return;
+    }
     const data = await syncRef.fetchRoom(code);
     if (!data) {
-      notify('找不到该房间，请检查房间码');
+      notify('找不到该房间，请检查输入');
       return;
     }
     pendingJoin = { code, data };
@@ -347,6 +379,26 @@ async function doLeaveRoom(code, roomName) {
   if (typeof hooksRef.onRoomLeft === 'function') hooksRef.onRoomLeft(code);
 }
 
+async function doResetPassword(code, roomName) {
+  const newPwd = window.prompt(`为「${roomName}」设置新的 4 位数字密码（留空则清除密码）：`, '');
+  if (newPwd === null) return; // 取消
+  const pwd = newPwd.trim();
+  if (pwd && !/^\d{4}$/.test(pwd)) {
+    notify('密码必须为 4 位数字');
+    return;
+  }
+  if (typeof syncRef.updateRoomPassword !== 'function') {
+    notify('当前版本不支持，请更新后重试');
+    return;
+  }
+  const ok = await syncRef.updateRoomPassword(code, pwd);
+  if (ok) {
+    notify(pwd ? `「${roomName}」密码已更新为 ${pwd}` : `「${roomName}」密码已清除`);
+  } else {
+    notify('密码更新失败，请检查网络后重试');
+  }
+}
+
 /* ---------- 显示 / 隐藏 ---------- */
 
 function showLobby() {
@@ -411,6 +463,8 @@ function bindEvents() {
       enterRoom(code);
     } else if (btn.dataset.action === 'leave') {
       doLeaveRoom(code, room.name);
+    } else if (btn.dataset.action === 'password') {
+      doResetPassword(code, room.name);
     }
   });
 

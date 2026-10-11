@@ -7,7 +7,7 @@
 <meta name="description" content="交互式中国地图足迹：点击你去过的省份，点亮属于你的山河版图。">
 <meta name="theme-color" content="#080c16">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗺️</text></svg>">
-<link rel="stylesheet" href="styles.css?v=20261005n">
+<link rel="stylesheet" href="styles.css?v=20261005o">
 <script type="importmap">
 { "imports": { "d3-geo": "https://esm.sh/d3-geo@3.1.1" } }
 </script>
@@ -255,6 +255,7 @@
       <section class="lobby-section lobby-subpanel" id="lobby-create-panel" style="display:none">
         <h3 class="lobby-section-title">创建家庭房间</h3>
         <input type="text" class="lobby-input" id="lobby-create-name" maxlength="20" placeholder="房间名（默认：我们家）">
+        <input type="text" class="lobby-input" id="lobby-create-password" maxlength="4" inputmode="numeric" placeholder="加入密码（4 位数字，可选）" style="margin-top:8px">
         <div class="lobby-subpanel-actions">
           <button class="btn-primary" id="lobby-create-confirm" type="button">确定创建</button>
           <button class="btn-subtle" id="lobby-create-cancel" type="button">取消</button>
@@ -264,8 +265,8 @@
       <!-- 加入房间子面板 -->
       <section class="lobby-section lobby-subpanel" id="lobby-join-panel" style="display:none">
         <h3 class="lobby-section-title">加入房间</h3>
-        <input type="text" class="lobby-input" id="lobby-join-code" maxlength="6" inputmode="numeric"
-          placeholder="输入 6 位房间码" aria-label="6 位房间码">
+        <input type="text" class="lobby-input" id="lobby-join-code" maxlength="6"
+          placeholder="输入 6 位房间码或 4 位密码" aria-label="房间码或密码">
         <div class="lobby-subpanel-actions">
           <button class="btn-primary" id="lobby-join-preview-btn" type="button">查找房间</button>
           <button class="btn-subtle" id="lobby-join-cancel" type="button">取消</button>
@@ -343,6 +344,6 @@
   </div>
 </div>
 
-<script type="module" src="src/main.js?v=20261005n"></script>
+<script type="module" src="src/main.js?v=20261005o"></script>
 </body>
 </html>

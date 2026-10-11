@@ -2,7 +2,7 @@
  * 点亮中国 · 同步层（封装 Worker API 客户端与离线容灾）
  * 2 秒防抖自动 PUT 同步、打开/加入拉取全家数据、无网络静默降级
  */
-import { SYNC_DEBOUNCE_MS, SYNC_API_BASE } from './config.js?v=20261005n';
+import { SYNC_DEBOUNCE_MS, SYNC_API_BASE } from './config.js?v=20261005o';
 
 let syncTimer = null;
 let syncStatus = 'idle'; // 'idle' | 'syncing' | 'saved' | 'offline'
@@ -63,13 +63,14 @@ async function apiRequest(path, options = {}) {
  * 创建新房间（v5）
  * @param {string} name 房间名
  * @param {string} ownerUserId 房主用户 ID
+ * @param {string} password 可选的加入密码
  * @returns {Promise<{code: string}|null>}
  */
-export async function createRoom(name, ownerUserId) {
+export async function createRoom(name, ownerUserId, password = '') {
   setStatus('syncing');
   const res = await apiRequest('/api/rooms', {
     method: 'POST',
-    body: JSON.stringify({ name, ownerUserId }),
+    body: JSON.stringify({ name, ownerUserId, password }),
   });
   if (res && res.code) {
     setStatus('saved');
@@ -77,6 +78,42 @@ export async function createRoom(name, ownerUserId) {
   }
   setStatus('offline');
   return null;
+}
+
+/**
+ * 根据密码查询房间码（v5 新增）
+ * @param {string} password 房间密码（4 位数字）
+ * @returns {Promise<{code: string}|null>}
+ */
+export async function getRoomByPassword(password) {
+  setStatus('syncing');
+  const res = await apiRequest(`/api/rooms/by-password/${encodeURIComponent(password)}`);
+  if (res && res.code) {
+    setStatus('saved');
+    return res;
+  }
+  setStatus('offline');
+  return null;
+}
+
+/**
+ * 重设房间密码（v5 新增，仅房主）
+ * @param {string} code 房间码
+ * @param {string} password 新密码（4 位数字，空字符串清除）
+ * @returns {Promise<boolean>}
+ */
+export async function updateRoomPassword(code, password) {
+  setStatus('syncing');
+  const res = await apiRequest(`/api/rooms/${code}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ password }),
+  });
+  if (res && res.ok) {
+    setStatus('saved');
+    return true;
+  }
+  setStatus('offline');
+  return false;
 }
 
 /**

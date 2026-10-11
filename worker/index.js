@@ -312,6 +312,18 @@ export default {
           // 新流程：name 为房间名
           const ownerUserId = String(body.ownerUserId);
           const roomName = (body.name || '家庭房间').trim().slice(0, 20) || '家庭房间';
+          const password = typeof body.password === 'string' ? body.password.trim() : '';
+          
+          // 密码为 4 位数字，唯一性检查
+          if (password) {
+            if (!/^\d{4}$/.test(password)) {
+              return errorResponse('密码必须为 4 位数字', 400);
+            }
+            const existingCode = await env.ROOMS_KV.get(`pwd:${password}`);
+            if (existingCode) {
+              return errorResponse('该密码已被使用，请换一个', 400);
+            }
+          }
 
           // 确保 owner 用户存在（没有则创建占位档案）
           let owner = await getUser(env, ownerUserId);
@@ -338,6 +350,10 @@ export default {
             createdAt: now,
             memberUserIds: [{ userId: ownerUserId, joinedAt: now }],
           };
+          if (password) {
+            room.password = password;
+            await env.ROOMS_KV.put(`pwd:${password}`, code);
+          }
           await putRoom(env, room);
           return jsonResponse({ code }, 201);
         }
@@ -363,6 +379,16 @@ export default {
           memberUserIds: [{ userId, joinedAt: now }],
         });
         return jsonResponse({ code, memberId: userId }, 201);
+      }
+
+      // GET /api/rooms/by-password/:password — 根据密码查房间码（用于密码加入）
+      const pwdMatch = pathname.match(/^\/api\/rooms\/by-password\/(.+)$/);
+      if (method === 'GET' && pwdMatch) {
+        const password = decodeURIComponent(pwdMatch[1]).trim();
+        if (!/^\d{4}$/.test(password)) return errorResponse('密码为 4 位数字', 400);
+        const code = await env.ROOMS_KV.get(`pwd:${password}`);
+        if (!code) return errorResponse('密码不正确或房间不存在', 404);
+        return jsonResponse({ code });
       }
 
       // GET /api/rooms/:code — 房间详情（含成员足迹）
@@ -395,6 +421,27 @@ export default {
             return errorResponse('新房主必须是房间成员', 400);
           }
           room.ownerUserId = body.ownerUserId;
+        }
+        // 重设密码（4 位数字，空字符串则清除密码）
+        if (body.password !== undefined) {
+          const newPwd = typeof body.password === 'string' ? body.password.trim() : '';
+          if (newPwd && !/^\d{4}$/.test(newPwd)) {
+            return errorResponse('密码必须为 4 位数字', 400);
+          }
+          // 清除旧密码索引
+          if (room.password) {
+            await env.ROOMS_KV.delete(`pwd:${room.password}`);
+          }
+          if (newPwd) {
+            const existingCode = await env.ROOMS_KV.get(`pwd:${newPwd}`);
+            if (existingCode && existingCode !== code) {
+              return errorResponse('该密码已被使用，请换一个', 400);
+            }
+            room.password = newPwd;
+            await env.ROOMS_KV.put(`pwd:${newPwd}`, code);
+          } else {
+            delete room.password;
+          }
         }
         await putRoom(env, room);
         return jsonResponse({ ok: true });
