@@ -2,12 +2,12 @@
  * 点亮中国 · 入口：组装地图 / 状态 / 视听反馈与交互
  * 包含 Phase 2（音效/粒子/成就/城市下钻/称号/主题）与 Phase 3（多用户云同步/PK透视对战）
  */
-import { TOTAL_PROVINCES, MAX_MEMBERS, MEMBER_COLORS } from './config.js?v=20261005p';
-import { loadGeo, loadCityGeo, isCityGeoLoaded, getLoadedCityGeo } from './geo.js?v=20261005p';
-import { store } from './store.js?v=20261005p';
-import { buildMainMap, buildInset, applyThemeVars } from './map.js?v=20261005p';
-import { ensureCtx, setEnabled as setAudioEnabled, playLight, playUnlight, playAchievement } from './audio.js?v=20261005p';
-import { initParticles, burst as burstParticles, confetti as confettiParticles, setParticlesTheme, resizeParticles } from './particles.js?v=20261005p';
+import { TOTAL_PROVINCES, MAX_MEMBERS, MEMBER_COLORS } from './config.js?v=20261005q';
+import { loadGeo, loadCityGeo, isCityGeoLoaded, getLoadedCityGeo } from './geo.js?v=20261005q';
+import { store } from './store.js?v=20261005q';
+import { buildMainMap, buildInset, applyThemeVars } from './map.js?v=20261005q';
+import { ensureCtx, setEnabled as setAudioEnabled, playLight, playUnlight, playAchievement } from './audio.js?v=20261005q';
+import { initParticles, burst as burstParticles, confetti as confettiParticles, setParticlesTheme, resizeParticles } from './particles.js?v=20261005q';
 import {
   TITLES,
   ACHIEVEMENTS,
@@ -15,7 +15,7 @@ import {
   initProvinceAdcodes,
   getAdcode,
   checkAchievements,
-} from './achievements.js?v=20261005p';
+} from './achievements.js?v=20261005q';
 import {
   loadSpots,
   getSpotTotal,
@@ -24,9 +24,9 @@ import {
   getSpotTitleByCount,
   SPOT_TITLES,
   CAT_LABELS,
-} from './spots.js?v=20261005p';
-import { loadPoetry, getPoetry } from './poetry.js?v=20261005p';
-import { initLobby, showLobby, hideLobby } from './lobby.js?v=20261005p';
+} from './spots.js?v=20261005q';
+import { loadPoetry, getPoetry } from './poetry.js?v=20261005q';
+import { initLobby, showLobby, hideLobby } from './lobby.js?v=20261005q';
 import {
   initSync,
   createRoom,
@@ -40,7 +40,7 @@ import {
   getRoomByPassword,
   updateRoomPassword,
   listRooms,
-} from './sync.js?v=20261005p';
+} from './sync.js?v=20261005q';
 
 const $ = (id) => document.getElementById(id);
 const isTouch = matchMedia('(pointer: coarse)').matches;
@@ -50,6 +50,37 @@ let provinces = [];
 let islandsFeature = null;
 let pendingUnlight = null; // { adcode, name, isCity, feature }
 let currentTheme = store.state.theme;
+
+// v5：房间成员只读视图（从服务端拉取，不并入本地用户）
+let roomMembersCache = []; // [{userId, nickname, color, footprint, updatedAt, joinedAt}]
+let roomMembersCode = null;
+
+/**
+ * 拉取并缓存房间成员
+ */
+async function refreshRoomMembers(code) {
+  if (!code) {
+    roomMembersCache = [];
+    roomMembersCode = null;
+    return;
+  }
+  try {
+    const data = await fetchRoom(code);
+    if (data && Array.isArray(data.members)) {
+      roomMembersCache = data.members;
+      roomMembersCode = code;
+    }
+  } catch {
+    // 离线时保持旧缓存
+  }
+}
+
+/**
+ * 获取当前房间成员（只读视图）
+ */
+function getRoomMembers() {
+  return roomMembersCache;
+}
 
 // 成就解锁队列状态
 const unlockQueue = [];
@@ -1929,6 +1960,13 @@ async function init() {
 
   // 初始化同步层与离线容灾
   initSync(store);
+  // 页面加载时如有活跃房间，拉取成员
+  const activeCode = store.getActiveRoomCode();
+  if (activeCode) {
+    refreshRoomMembers(activeCode).then(() => {
+      renderMemberButton();
+    });
+  }
   subscribeSyncStatus((status) => {
     const indicator = $('family-sync-indicator');
     if (!indicator) return;
@@ -1942,9 +1980,16 @@ async function init() {
   // 初始化大厅（Phase 1 用户系统）
   initLobby(store, { createRoom, joinRoom, fetchRoom, leaveRoom, claimIdentity, getRoomByPassword, updateRoomPassword, listRooms }, {
     toast: (msg) => toast(msg),
-    onEnterRoom: (code) => {
-      // 进房后刷新顶部按钮
+    onEnterRoom: async (code) => {
+      // 进房后刷新顶部按钮 + 拉取房间成员
       renderMemberButton();
+      await refreshRoomMembers(code);
+      const members = getRoomMembers();
+      if (members.length > 0) {
+        const names = members.map((m) => m.nickname || m.name || '成员').join('、');
+        toast(`已进入房间，成员：${names}`);
+      }
+      renderFamilyModal();
     },
     onUserSwitched: () => {
       renderMemberButton();
