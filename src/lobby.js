@@ -56,21 +56,10 @@ function renderIdentity() {
 }
 
 function renderUserSwitch() {
-  const users = storeRef.getUsers();
+  // v2：单账号体系，不再显示本机多用户切换
   const box = $('lobby-users-section');
-  if (users.length <= 1) {
-    box.style.display = 'none';
-    return;
-  }
-  box.style.display = '';
-  const activeId = storeRef.getActiveUserId();
-  $('lobby-users-list').innerHTML = users.map((u) => `
-    <button type="button" class="lobby-user-chip${u.userId === activeId ? ' active' : ''}"
-      data-user-id="${esc(u.userId)}" aria-pressed="${u.userId === activeId}">
-      <span class="lobby-user-chip-dot" style="background:${esc(u.color)}"></span>
-      <span>${esc(u.nickname)}</span>
-    </button>
-  `).join('');
+  if (box) box.style.display = 'none';
+  return;
 }
 
 /**

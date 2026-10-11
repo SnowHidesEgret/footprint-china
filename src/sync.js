@@ -2,7 +2,7 @@
  * 点亮中国 · 同步层（封装 Worker API 客户端与离线容灾）
  * 2 秒防抖自动 PUT 同步、打开/加入拉取全家数据、无网络静默降级
  */
-import { SYNC_DEBOUNCE_MS, SYNC_API_BASE } from './config.js?v=20261005t';
+import { SYNC_DEBOUNCE_MS, SYNC_API_BASE } from './config.js?v=20261005u';
 
 let syncTimer = null;
 let syncStatus = 'idle'; // 'idle' | 'syncing' | 'saved' | 'offline'
@@ -29,7 +29,7 @@ export function getSyncStatus() {
 /**
  * 通用 Fetch 包装，带 6 秒超时与静默容灾
  */
-async function apiRequest(path, options = {}) {
+export async function apiRequest(path, options = {}) {
   const url = (SYNC_API_BASE || '') + path;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 6000);

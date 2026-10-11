@@ -2641,3 +2641,46 @@ body.spot-mode #inset-wrap {
     padding: 6px 12px;
   }
 }
+
+/* v2 登录页 */
+#auth-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(10, 14, 20, 0.92);
+  backdrop-filter: blur(8px);
+}
+.auth-card {
+  width: min(360px, 92vw);
+  background: #1a2230;
+  border: 1px solid #2a3a4d;
+  border-radius: 16px;
+  padding: 28px 24px;
+  text-align: center;
+}
+.auth-card h2 { margin: 0 0 4px; font-size: 22px; color: #fff; }
+.auth-sub { margin: 0 0 18px; font-size: 13px; color: #8a9bb0; }
+.auth-tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+.auth-tab {
+  flex: 1; padding: 8px; border: none; border-radius: 8px;
+  background: #243042; color: #8a9bb0; font-size: 14px; cursor: pointer;
+}
+.auth-tab.active { background: #C9A25E; color: #1a1408; font-weight: 600; }
+.auth-divider { display: flex; align-items: center; gap: 12px; margin: 16px 0; color: #5a6b80; font-size: 12px; }
+.auth-divider::before, .auth-divider::after { content: ''; flex: 1; height: 1px; background: #2a3a4d; }
+.auth-error { color: #e0705f; font-size: 13px; margin: 12px 0 0; }
+
+/* 游客横幅 */
+#guest-banner {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 900;
+  display: flex; align-items: center; justify-content: center; gap: 12px;
+  padding: 8px 16px;
+  background: rgba(201, 162, 94, 0.15);
+  border-bottom: 1px solid rgba(201, 162, 94, 0.3);
+  font-size: 13px; color: #d4b56a;
+  backdrop-filter: blur(4px);
+}
+#guest-banner button {
+  padding: 4px 12px; border-radius: 6px; font-size: 12px; cursor: pointer;
+}
+#guest-register-btn { background: #C9A25E; color: #1a1408; border: none; font-weight: 600; }
+#guest-logout-btn { background: transparent; color: #8a9bb0; border: 1px solid #2a3a4d; }

@@ -2,12 +2,12 @@
  * 点亮中国 · 入口：组装地图 / 状态 / 视听反馈与交互
  * 包含 Phase 2（音效/粒子/成就/城市下钻/称号/主题）与 Phase 3（多用户云同步/PK透视对战）
  */
-import { TOTAL_PROVINCES, MAX_MEMBERS, MEMBER_COLORS } from './config.js?v=20261005t';
-import { loadGeo, loadCityGeo, isCityGeoLoaded, getLoadedCityGeo } from './geo.js?v=20261005t';
-import { store } from './store.js?v=20261005t';
-import { buildMainMap, buildInset, applyThemeVars } from './map.js?v=20261005t';
-import { ensureCtx, setEnabled as setAudioEnabled, playLight, playUnlight, playAchievement } from './audio.js?v=20261005t';
-import { initParticles, burst as burstParticles, confetti as confettiParticles, setParticlesTheme, resizeParticles } from './particles.js?v=20261005t';
+import { TOTAL_PROVINCES, MAX_MEMBERS, MEMBER_COLORS } from './config.js?v=20261005u';
+import { loadGeo, loadCityGeo, isCityGeoLoaded, getLoadedCityGeo } from './geo.js?v=20261005u';
+import { store } from './store.js?v=20261005u';
+import { buildMainMap, buildInset, applyThemeVars } from './map.js?v=20261005u';
+import { ensureCtx, setEnabled as setAudioEnabled, playLight, playUnlight, playAchievement } from './audio.js?v=20261005u';
+import { initParticles, burst as burstParticles, confetti as confettiParticles, setParticlesTheme, resizeParticles } from './particles.js?v=20261005u';
 import {
   TITLES,
   ACHIEVEMENTS,
@@ -15,7 +15,7 @@ import {
   initProvinceAdcodes,
   getAdcode,
   checkAchievements,
-} from './achievements.js?v=20261005t';
+} from './achievements.js?v=20261005u';
 import {
   loadSpots,
   getSpotTotal,
@@ -24,9 +24,9 @@ import {
   getSpotTitleByCount,
   SPOT_TITLES,
   CAT_LABELS,
-} from './spots.js?v=20261005t';
-import { loadPoetry, getPoetry } from './poetry.js?v=20261005t';
-import { initLobby, showLobby, hideLobby } from './lobby.js?v=20261005t';
+} from './spots.js?v=20261005u';
+import { loadPoetry, getPoetry } from './poetry.js?v=20261005u';
+import { initLobby, showLobby, hideLobby } from './lobby.js?v=20261005u';
 import {
   initSync,
   createRoom,
@@ -40,7 +40,19 @@ import {
   getRoomByPassword,
   updateRoomPassword,
   listRooms,
-} from './sync.js?v=20261005t';
+  apiRequest,
+} from './sync.js?v=20261005u';
+import {
+  getSession,
+  saveSession,
+  clearSession,
+  isGuest,
+  isUser,
+  getGuestFootprint,
+  saveGuestFootprint,
+  setApiRequest,
+} from './auth.js?v=20261005u';
+import { initAuthUI, showAuth, hideAuth } from './auth-ui.js?v=20261005u';
 
 const $ = (id) => document.getElementById(id);
 const isTouch = matchMedia('(pointer: coarse)').matches;
@@ -1926,6 +1938,52 @@ function buildAll() {
 }
 
 async function init() {
+  // v2：初始化认证（设置 API 请求函数）
+  setApiRequest(apiRequest);
+
+  // v2：检查登录会话
+  const session = getSession();
+  if (!session) {
+    // 无会话，显示登录页，等待用户操作
+    // 先加载地图底图（不阻塞登录）
+    try {
+      const geo = await loadGeo();
+      provinces = geo.provinces;
+      islandsFeature = geo.islands;
+      initProvinceAdcodes(provinces);
+    } catch (err) {
+      console.error('地图加载失败:', err);
+    }
+    buildAll();
+    $('loading').style.display = 'none';
+    initAuthUI({
+      onAuthed: (newSession, user) => {
+        // 登录/注册/游客成功后，重新初始化
+        location.reload();
+      },
+    });
+    showAuth();
+    return;
+  }
+
+  // 有会话，继续正常初始化
+  window._v2_session = session;
+  if (isGuest(session)) {
+    document.getElementById('guest-banner').style.display = 'flex';
+    // 游客：隐藏 PK 按钮
+    const pkBtn = document.getElementById('pk-btn');
+    if (pkBtn) pkBtn.style.display = 'none';
+    // 游客横幅按钮
+    document.getElementById('guest-register-btn').addEventListener('click', () => {
+      clearSession();
+      location.reload();
+    });
+    document.getElementById('guest-logout-btn').addEventListener('click', () => {
+      clearSession();
+      location.reload();
+    });
+  }
+
   try {
     const geo = await loadGeo();
     provinces = geo.provinces;

@@ -13,6 +13,22 @@ const ALLOWED_ORIGIN = 'https://map.snowyegret.top';
 const DEFAULT_COLORS = ['#C9A25E', '#7FB3A3', '#C4574E', '#5B7FA6', '#9B7FB3', '#D08A4E', '#7BA05B', '#C47F9B'];
 const MAX_MEMBERS = 8;
 
+// v2 用户系统：密码哈希（SHA-256 + 用户名作盐）
+async function hashPassword(username, password) {
+  const data = new TextEncoder().encode(`footprint:${username}:${password}`);
+  const hash = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+function isValidUsername(username) {
+  // 2-12 字符，中文/字母/数字/下划线
+  return /^[\u4e00-\u9fa5a-zA-Z0-9_]{2,12}$/.test(username);
+}
+
+function isValidPin(password) {
+  return /^\d{4}$/.test(password);
+}
+
 function corsHeaders() {
   return {
     'Access-Control-Allow-Origin': ALLOWED_ORIGIN,
@@ -379,6 +395,158 @@ export default {
           memberUserIds: [{ userId, joinedAt: now }],
         });
         return jsonResponse({ code, memberId: userId }, 201);
+      }
+
+      // ========== v2 用户系统：注册/登录/改密码 ==========
+
+      // POST /api/auth/register — 注册 {username, password, nickname?}
+      if (method === 'POST' && pathname === '/api/auth/register') {
+        const body = await readBody();
+        const username = (body.username || '').trim();
+        const password = (body.password || '').trim();
+        const nickname = (body.nickname || username).trim().slice(0, 20) || username;
+
+        if (!isValidUsername(username)) {
+          return errorResponse('用户名需为 2-12 个字符（中文/字母/数字/下划线）', 400);
+        }
+        if (!isValidPin(password)) {
+          return errorResponse('密码必须为 4 位数字', 400);
+        }
+        // 用户名全站唯一，key 为 acct:{username}
+        const existing = await env.ROOMS_KV.get(`acct:${username}`);
+        if (existing) {
+          return errorResponse('用户名已被注册', 409);
+        }
+        const now = Date.now();
+        const user = {
+          userId: username, // v2：用户名即 userId
+          username,
+          passwordHash: await hashPassword(username, password),
+          nickname,
+          color: DEFAULT_COLORS[Math.floor(Math.random() * DEFAULT_COLORS.length)],
+          footprint: emptyFootprint(),
+          roomCodes: [],
+          createdAt: now,
+          updatedAt: now,
+          mergedInto: null,
+          v2: true,
+        };
+        await env.ROOMS_KV.put(`acct:${username}`, JSON.stringify({ username }));
+        await putUser(env, user);
+        // 返回时去掉密码哈希
+        const { passwordHash, ...safe } = user;
+        return jsonResponse({ user: safe }, 201);
+      }
+
+      // POST /api/auth/login — 登录 {username, password}
+      if (method === 'POST' && pathname === '/api/auth/login') {
+        const body = await readBody();
+        const username = (body.username || '').trim();
+        const password = (body.password || '').trim();
+        if (!username || !password) {
+          return errorResponse('请输入用户名和密码', 400);
+        }
+        const user = await getUser(env, username);
+        if (!user || !user.passwordHash) {
+          return errorResponse('用户名或密码错误', 401);
+        }
+        const hash = await hashPassword(username, password);
+        if (hash !== user.passwordHash) {
+          return errorResponse('用户名或密码错误', 401);
+        }
+        const { passwordHash, ...safe } = user;
+        return jsonResponse({ user: safe });
+      }
+
+      // POST /api/auth/change-password — 改密码 {username, oldPassword, newPassword}
+      if (method === 'POST' && pathname === '/api/auth/change-password') {
+        const body = await readBody();
+        const username = (body.username || '').trim();
+        const oldPassword = (body.oldPassword || '').trim();
+        const newPassword = (body.newPassword || '').trim();
+        if (!isValidPin(newPassword)) {
+          return errorResponse('新密码必须为 4 位数字', 400);
+        }
+        const user = await getUser(env, username);
+        if (!user || !user.passwordHash) {
+          return errorResponse('用户不存在', 404);
+        }
+        const oldHash = await hashPassword(username, oldPassword);
+        if (oldHash !== user.passwordHash) {
+          return errorResponse('原密码错误', 401);
+        }
+        user.passwordHash = await hashPassword(username, newPassword);
+        user.updatedAt = Date.now();
+        await putUser(env, user);
+        return jsonResponse({ ok: true });
+      }
+
+      // POST /api/auth/claim-legacy — 老数据领回 {nickname, password, roomCode?}
+      // v1 老用户（m_ 开头）首次用新版时，输入原昵称+设 4 位密码，绑定老数据
+      if (method === 'POST' && pathname === '/api/auth/claim-legacy') {
+        const body = await readBody();
+        const nickname = (body.nickname || '').trim();
+        const password = (body.password || '').trim();
+        if (!nickname) return errorResponse('请输入原来的昵称', 400);
+        if (!isValidPin(password)) return errorResponse('密码必须为 4 位数字', 400);
+        // 用户名默认为昵称拼音化？不，直接用昵称作用户名（需符合规则）
+        // 若昵称不符合用户名规则，用 nickname 的 hash 生成
+        let username = nickname;
+        if (!isValidUsername(username)) {
+          // 生成合法用户名：u_ + 时间戳后 6 位
+          username = `u_${Date.now().toString(36).slice(-6)}`;
+        }
+        // 检查用户名是否已被占用
+        const acctExists = await env.ROOMS_KV.get(`acct:${username}`);
+        if (acctExists) {
+          return errorResponse(`"${username}" 已被注册，请换个用户名或联系家人`, 409);
+        }
+        // 查找老数据：在所有 user:{m_*} 中找昵称匹配的
+        // 为简化，要求前端传入老 userId（从房间成员列表获取）
+        const legacyUserId = (body.legacyUserId || '').trim();
+        let legacyUser = null;
+        if (legacyUserId) {
+          legacyUser = await getUser(env, legacyUserId);
+        }
+        const now = Date.now();
+        const newUser = {
+          userId: username,
+          username,
+          passwordHash: await hashPassword(username, password),
+          nickname,
+          color: (legacyUser && legacyUser.color) || DEFAULT_COLORS[0],
+          footprint: (legacyUser && legacyUser.footprint) || emptyFootprint(),
+          roomCodes: (legacyUser && legacyUser.roomCodes) || [],
+          createdAt: now,
+          updatedAt: now,
+          mergedInto: null,
+          v2: true,
+          claimedFrom: legacyUserId || null,
+        };
+        await env.ROOMS_KV.put(`acct:${username}`, JSON.stringify({ username }));
+        await putUser(env, newUser);
+        // 更新房间成员列表中的 userId（把老 id 换成新 username）
+        if (legacyUser && newUser.roomCodes.length > 0) {
+          for (const code of newUser.roomCodes) {
+            const room = await getRoom(env, code);
+            if (room) {
+              const entries = getMemberEntries(room);
+              const idx = entries.findIndex((e) => e.userId === legacyUserId);
+              if (idx >= 0) {
+                entries[idx].userId = username;
+                setMemberEntries(room, entries);
+                if (room.ownerUserId === legacyUserId) room.ownerUserId = username;
+                await putRoom(env, room);
+              }
+            }
+          }
+          // 标记老用户已迁移
+          legacyUser.mergedInto = username;
+          legacyUser.updatedAt = now;
+          await putUser(env, legacyUser);
+        }
+        const { passwordHash, ...safe } = newUser;
+        return jsonResponse({ user: safe }, 201);
       }
 
       // GET /api/rooms — 列出所有房间（供加入时浏览）

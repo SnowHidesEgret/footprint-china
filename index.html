@@ -7,12 +7,46 @@
 <meta name="description" content="交互式中国地图足迹：点击你去过的省份，点亮属于你的山河版图。">
 <meta name="theme-color" content="#080c16">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗺️</text></svg>">
-<link rel="stylesheet" href="styles.css?v=20261005t">
+<link rel="stylesheet" href="styles.css?v=20261005u">
 <script type="importmap">
 { "imports": { "d3-geo": "https://esm.sh/d3-geo@3.1.1" } }
 </script>
 </head>
 <body>
+
+<!-- v2 登录页 -->
+<div id="auth-overlay" style="display:none">
+  <div class="auth-card">
+    <h2>🗺️ 点亮中国</h2>
+    <p class="auth-sub">点亮你去过的每一寸山河</p>
+    <div class="auth-tabs">
+      <button type="button" class="auth-tab active" data-tab="login">登录</button>
+      <button type="button" class="auth-tab" data-tab="register">注册</button>
+    </div>
+    <div id="auth-login-form">
+      <input type="text" id="auth-login-username" class="lobby-input" maxlength="12" placeholder="用户名" autocomplete="username">
+      <input type="password" id="auth-login-password" class="lobby-input" maxlength="4" inputmode="numeric" placeholder="4 位密码" autocomplete="current-password" style="margin-top:8px">
+      <button type="button" id="auth-login-btn" class="btn-primary" style="width:100%;margin-top:12px">登录</button>
+    </div>
+    <div id="auth-register-form" style="display:none">
+      <input type="text" id="auth-register-username" class="lobby-input" maxlength="12" placeholder="用户名（2-12字，中文/字母/数字）" autocomplete="username">
+      <input type="text" id="auth-register-nickname" class="lobby-input" maxlength="20" placeholder="昵称（默认同用户名）" style="margin-top:8px">
+      <input type="password" id="auth-register-password" class="lobby-input" maxlength="4" inputmode="numeric" placeholder="4 位数字密码" autocomplete="new-password" style="margin-top:8px">
+      <input type="password" id="auth-register-password2" class="lobby-input" maxlength="4" inputmode="numeric" placeholder="再输一次密码" autocomplete="new-password" style="margin-top:8px">
+      <button type="button" id="auth-register-btn" class="btn-primary" style="width:100%;margin-top:12px">注册</button>
+    </div>
+    <div class="auth-divider"><span>或</span></div>
+    <button type="button" id="auth-guest-btn" class="btn-subtle" style="width:100%">游客试玩（数据只保存在本机）</button>
+    <p id="auth-error" class="auth-error" style="display:none"></p>
+  </div>
+</div>
+
+<!-- 游客横幅 -->
+<div id="guest-banner" style="display:none">
+  <span>👤 游客试玩中，数据只保存在本机</span>
+  <button type="button" id="guest-register-btn">去注册</button>
+  <button type="button" id="guest-logout-btn" aria-label="退出">✕</button>
+</div>
 
 <div id="loading" role="status" aria-live="polite">
   <div class="ring"></div>
@@ -356,6 +390,6 @@
   </div>
 </div>
 
-<script type="module" src="src/main.js?v=20261005t"></script>
+<script type="module" src="src/main.js?v=20261005u"></script>
 </body>
 </html>
