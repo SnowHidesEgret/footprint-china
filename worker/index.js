@@ -481,6 +481,31 @@ export default {
         return jsonResponse({ ok: true });
       }
 
+      // GET /api/auth/find-legacy?nickname=xxx — 按昵称查找老用户（用于领回数据）
+      if (method === 'GET' && pathname === '/api/auth/find-legacy') {
+        const nickname = (url.searchParams.get('nickname') || '').trim();
+        if (!nickname) return errorResponse('请输入昵称', 400);
+        // 遍历所有 user:{m_*} 找昵称匹配且未被领走的
+        const listRes = await env.ROOMS_KV.list({ prefix: 'user:m_' });
+        const matches = [];
+        for (const k of listRes.keys || []) {
+          const user = await getUser(env, k.name.slice(5)); // 去掉 'user:' 前缀
+          if (user && user.nickname === nickname && !user.mergedInto && !user.v2) {
+            const provCount = Object.keys(user.footprint?.provinces || {}).length;
+            const cityCount = Object.keys(user.footprint?.cities || {}).length;
+            matches.push({
+              userId: user.userId,
+              nickname: user.nickname,
+              color: user.color,
+              provCount,
+              cityCount,
+              roomCodes: user.roomCodes || [],
+            });
+          }
+        }
+        return jsonResponse({ matches });
+      }
+
       // POST /api/auth/claim-legacy — 老数据领回 {nickname, password, roomCode?}
       // v1 老用户（m_ 开头）首次用新版时，输入原昵称+设 4 位密码，绑定老数据
       if (method === 'POST' && pathname === '/api/auth/claim-legacy') {

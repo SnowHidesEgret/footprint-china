@@ -7,7 +7,7 @@
 <meta name="description" content="交互式中国地图足迹：点击你去过的省份，点亮属于你的山河版图。">
 <meta name="theme-color" content="#080c16">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗺️</text></svg>">
-<link rel="stylesheet" href="styles.css?v=20261005v">
+<link rel="stylesheet" href="styles.css?v=20261005w">
 <script type="importmap">
 { "imports": { "d3-geo": "https://esm.sh/d3-geo@3.1.1" } }
 </script>
@@ -37,7 +37,25 @@
     </div>
     <div class="auth-divider"><span>或</span></div>
     <button type="button" id="auth-guest-btn" class="btn-subtle" style="width:100%">游客试玩（数据只保存在本机）</button>
+    <div style="margin-top:12px">
+      <button type="button" id="auth-legacy-btn" class="btn-subtle" style="width:100%;font-size:13px">我是老用户，领回原来的足迹</button>
+    </div>
     <p id="auth-error" class="auth-error" style="display:none"></p>
+  </div>
+</div>
+
+<!-- 老用户领回 -->
+<div id="legacy-overlay" style="display:none">
+  <div class="auth-card">
+    <h2>领回足迹</h2>
+    <p class="auth-sub">输入你原来的昵称，设置 4 位密码即可领回</p>
+    <input type="text" id="legacy-nickname" class="lobby-input" maxlength="20" placeholder="原来的昵称（如：爸爸）">
+    <input type="password" id="legacy-password" class="lobby-input" maxlength="4" inputmode="numeric" placeholder="设置 4 位数字密码" style="margin-top:8px">
+    <input type="password" id="legacy-password2" class="lobby-input" maxlength="4" inputmode="numeric" placeholder="再输一次密码" style="margin-top:8px">
+    <div id="legacy-matches" style="margin-top:12px;text-align:left"></div>
+    <button type="button" id="legacy-search-btn" class="btn-primary" style="width:100%;margin-top:12px">查找我的足迹</button>
+    <button type="button" id="legacy-back-btn" class="btn-subtle" style="width:100%;margin-top:8px">返回</button>
+    <p id="legacy-error" class="auth-error" style="display:none"></p>
   </div>
 </div>
 
@@ -390,6 +408,6 @@
   </div>
 </div>
 
-<script type="module" src="src/main.js?v=20261005v"></script>
+<script type="module" src="src/main.js?v=20261005w"></script>
 </body>
 </html>

@@ -2684,3 +2684,18 @@ body.spot-mode #inset-wrap {
 }
 #guest-register-btn { background: #C9A25E; color: #1a1408; border: none; font-weight: 600; }
 #guest-logout-btn { background: transparent; color: #8a9bb0; border: 1px solid #2a3a4d; }
+
+/* 老用户领回 */
+#legacy-overlay {
+  position: fixed; inset: 0; z-index: 1001;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(10, 14, 20, 0.92);
+  backdrop-filter: blur(8px);
+}
+.legacy-match-item {
+  padding: 10px 12px; margin: 6px 0;
+  background: #243042; border-radius: 8px;
+  cursor: pointer; border: 2px solid transparent;
+}
+.legacy-match-item:hover { border-color: #C9A25E; }
+.legacy-match-item.selected { border-color: #C9A25E; background: #2a3a4d; }
