@@ -2,12 +2,12 @@
  * 点亮中国 · 入口：组装地图 / 状态 / 视听反馈与交互
  * 包含 Phase 2（音效/粒子/成就/城市下钻/称号/主题）与 Phase 3（多用户云同步/PK透视对战）
  */
-import { TOTAL_PROVINCES, MAX_MEMBERS, MEMBER_COLORS } from './config.js?v=20261005r';
-import { loadGeo, loadCityGeo, isCityGeoLoaded, getLoadedCityGeo } from './geo.js?v=20261005r';
-import { store } from './store.js?v=20261005r';
-import { buildMainMap, buildInset, applyThemeVars } from './map.js?v=20261005r';
-import { ensureCtx, setEnabled as setAudioEnabled, playLight, playUnlight, playAchievement } from './audio.js?v=20261005r';
-import { initParticles, burst as burstParticles, confetti as confettiParticles, setParticlesTheme, resizeParticles } from './particles.js?v=20261005r';
+import { TOTAL_PROVINCES, MAX_MEMBERS, MEMBER_COLORS } from './config.js?v=20261005s';
+import { loadGeo, loadCityGeo, isCityGeoLoaded, getLoadedCityGeo } from './geo.js?v=20261005s';
+import { store } from './store.js?v=20261005s';
+import { buildMainMap, buildInset, applyThemeVars } from './map.js?v=20261005s';
+import { ensureCtx, setEnabled as setAudioEnabled, playLight, playUnlight, playAchievement } from './audio.js?v=20261005s';
+import { initParticles, burst as burstParticles, confetti as confettiParticles, setParticlesTheme, resizeParticles } from './particles.js?v=20261005s';
 import {
   TITLES,
   ACHIEVEMENTS,
@@ -15,7 +15,7 @@ import {
   initProvinceAdcodes,
   getAdcode,
   checkAchievements,
-} from './achievements.js?v=20261005r';
+} from './achievements.js?v=20261005s';
 import {
   loadSpots,
   getSpotTotal,
@@ -24,9 +24,9 @@ import {
   getSpotTitleByCount,
   SPOT_TITLES,
   CAT_LABELS,
-} from './spots.js?v=20261005r';
-import { loadPoetry, getPoetry } from './poetry.js?v=20261005r';
-import { initLobby, showLobby, hideLobby } from './lobby.js?v=20261005r';
+} from './spots.js?v=20261005s';
+import { loadPoetry, getPoetry } from './poetry.js?v=20261005s';
+import { initLobby, showLobby, hideLobby } from './lobby.js?v=20261005s';
 import {
   initSync,
   createRoom,
@@ -40,7 +40,7 @@ import {
   getRoomByPassword,
   updateRoomPassword,
   listRooms,
-} from './sync.js?v=20261005r';
+} from './sync.js?v=20261005s';
 
 const $ = (id) => document.getElementById(id);
 const isTouch = matchMedia('(pointer: coarse)').matches;
@@ -2061,18 +2061,20 @@ async function promptIdentityOnEnter(code) {
   if (!me) return;
   
   const members = getRoomMembers();
-  if (members.length === 0) return;
+  // 只看除自己以外的其他成员
+  const otherMembers = members.filter((m) => m.userId !== me.userId);
+  if (otherMembers.length === 0) return;
   
-  // 如果当前用户已在成员中，不用选
-  if (members.some((m) => m.userId === me.userId)) return;
+  // 大厅淡出动画完成后在弹窗，避免残影
+  await new Promise((r) => setTimeout(r, 260));
   
-  // 构建选择项
-  const options = members.map((m, i) => {
+  // 构建选择项（不含自己）
+  const options = otherMembers.map((m, i) => {
     const provCount = Object.keys(m.footprint?.provinces || {}).length;
     const cityCount = Object.keys(m.footprint?.cities || {}).length;
     return `${i + 1}. ${m.nickname || '成员'}（${provCount} 省 ${cityCount} 市）`;
   });
-  options.push(`${members.length + 1}. 我是新成员`);
+  options.push(`${otherMembers.length + 1}. 我是新成员`);
   
   const choice = window.prompt(
     `进入房间后请选择你的身份：\n${options.join('\n')}\n\n输入数字（1-${options.length}）：`,
@@ -2085,21 +2087,24 @@ async function promptIdentityOnEnter(code) {
     toast('输入无效，已跳过身份选择');
     return;
   }
-  if (idx === members.length) {
+  if (idx === otherMembers.length) {
     toast('你以新成员身份进入房间');
     return;
   }
-  const selected = members[idx];
-  await doClaimIdentity(code, selected.userId);
+  const selected = otherMembers[idx];
+  // 已通过 prompt 选择，跳过二次确认
+  await doClaimIdentity(code, selected.userId, true);
 }
   initLobby(store, { createRoom, joinRoom, fetchRoom, leaveRoom, claimIdentity, getRoomByPassword, updateRoomPassword, listRooms }, {
     toast: (msg) => toast(msg),
-    onEnterRoom: async (code) => {
+    onEnterRoom: async (code, opts = {}) => {
       // 进房后刷新顶部按钮 + 拉取房间成员
       renderMemberButton();
       await refreshRoomMembers(code);
-      // 提示选择身份（已有成员 or 新成员）
-      await promptIdentityOnEnter(code);
+      // 仅新加入时提示选择身份（避免每次进房都弹窗）
+      if (opts.isNewJoin) {
+        await promptIdentityOnEnter(code);
+      }
       renderFamilyModal();
     },
     onUserSwitched: () => {

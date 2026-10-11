@@ -357,7 +357,7 @@ async function doConfirmJoin() {
       showClaimPanel(code, sameName);
     } else {
       notify(`已加入「${roomName}」`);
-      enterRoom(code);
+      enterRoom(code, { isNewJoin: true });
     }
   } catch {
     notify('加入失败，请检查网络后重试');
@@ -394,10 +394,10 @@ function doClaim() {
 
 /* ---------- 进房 / 退房 ---------- */
 
-function enterRoom(code) {
+function enterRoom(code, opts = {}) {
   storeRef.setActiveRoom(code);
   hideLobby();
-  if (typeof hooksRef.onEnterRoom === 'function') hooksRef.onEnterRoom(code);
+  if (typeof hooksRef.onEnterRoom === 'function') hooksRef.onEnterRoom(code, opts);
 }
 
 async function doLeaveRoom(code, roomName) {
