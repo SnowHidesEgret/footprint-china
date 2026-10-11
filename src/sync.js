@@ -2,7 +2,7 @@
  * 点亮中国 · 同步层（封装 Worker API 客户端与离线容灾）
  * 2 秒防抖自动 PUT 同步、打开/加入拉取全家数据、无网络静默降级
  */
-import { SYNC_DEBOUNCE_MS, SYNC_API_BASE } from './config.js?v=20261005o';
+import { SYNC_DEBOUNCE_MS, SYNC_API_BASE } from './config.js?v=20261005p';
 
 let syncTimer = null;
 let syncStatus = 'idle'; // 'idle' | 'syncing' | 'saved' | 'offline'
@@ -77,6 +77,18 @@ export async function createRoom(name, ownerUserId, password = '') {
     return res;
   }
   setStatus('offline');
+  return null;
+}
+
+/**
+ * 列出所有房间（v5 新增，供加入时浏览）
+ * @returns {Promise<Array<{code, name, memberCount, hasPassword}>|null>}
+ */
+export async function listRooms() {
+  const res = await apiRequest('/api/rooms');
+  if (res && Array.isArray(res.rooms)) {
+    return res.rooms;
+  }
   return null;
 }
 

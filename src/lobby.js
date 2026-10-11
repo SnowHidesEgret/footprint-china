@@ -239,6 +239,42 @@ async function doCreateRoom() {
 
 let pendingJoin = null; // { code, data }
 
+async function loadAllRooms() {
+  const listEl = $('lobby-all-rooms-list');
+  if (!listEl) return;
+  listEl.innerHTML = '<div class="lobby-empty">加载中…</div>';
+  try {
+    if (typeof syncRef.listRooms !== 'function') {
+      listEl.innerHTML = '<div class="lobby-empty">当前版本不支持</div>';
+      return;
+    }
+    const rooms = await syncRef.listRooms();
+    if (!rooms || rooms.length === 0) {
+      listEl.innerHTML = '<div class="lobby-empty">暂无房间</div>';
+      return;
+    }
+    // 过滤掉已加入的
+    const joinedCodes = new Set(storeRef.getRooms().map((r) => r.code));
+    const available = rooms.filter((r) => !joinedCodes.has(r.code));
+    if (available.length === 0) {
+      listEl.innerHTML = '<div class="lobby-empty">所有房间都已加入</div>';
+      return;
+    }
+    listEl.innerHTML = available.map((r) => `
+      <div class="lobby-room-item" data-room-code="${esc(r.code)}">
+        <button type="button" class="lobby-room-main" data-action="preview-join" data-room-code="${esc(r.code)}">
+          <div class="lobby-room-name">${esc(r.name)}${r.hasPassword ? ' 🔒' : ''}</div>
+          <div class="lobby-room-meta">
+            <span class="lobby-room-code">${esc(r.code)}</span>
+            <span>·</span><span>${r.memberCount} 人</span>
+          </div>
+        </button>
+      </div>`).join('');
+  } catch {
+    listEl.innerHTML = '<div class="lobby-empty">加载失败，请重试</div>';
+  }
+}
+
 async function doPreviewJoin() {
   const codeInput = $('lobby-join-code');
   const input = (codeInput.value || '').trim();
@@ -451,6 +487,20 @@ function bindEvents() {
     }
   });
 
+  // 所有房间列表（加入时浏览，点击直接预览）
+  const allRoomsList = $('lobby-all-rooms-list');
+  if (allRoomsList) {
+    allRoomsList.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-action="preview-join"]');
+      if (!btn) return;
+      e.stopPropagation();
+      const code = btn.dataset.roomCode;
+      if (!code) return;
+      $('lobby-join-code').value = code;
+      doPreviewJoin();
+    });
+  }
+
   // 房间列表（事件委托：进入 / 退出）
   $('lobby-rooms-list').addEventListener('click', (e) => {
     const btn = e.target.closest('[data-action]');
@@ -488,6 +538,7 @@ function bindEvents() {
     e.stopPropagation();
     $('lobby-join-code').value = '';
     showSubPanel('lobby-join-panel');
+    loadAllRooms();
     setTimeout(() => $('lobby-join-code').focus(), 50);
   });
   $('lobby-join-preview-btn').addEventListener('click', (e) => { e.stopPropagation(); doPreviewJoin(); });

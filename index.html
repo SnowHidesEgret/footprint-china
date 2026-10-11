@@ -7,7 +7,7 @@
 <meta name="description" content="交互式中国地图足迹：点击你去过的省份，点亮属于你的山河版图。">
 <meta name="theme-color" content="#080c16">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗺️</text></svg>">
-<link rel="stylesheet" href="styles.css?v=20261005o">
+<link rel="stylesheet" href="styles.css?v=20261005p">
 <script type="importmap">
 { "imports": { "d3-geo": "https://esm.sh/d3-geo@3.1.1" } }
 </script>
@@ -271,6 +271,12 @@
           <button class="btn-primary" id="lobby-join-preview-btn" type="button">查找房间</button>
           <button class="btn-subtle" id="lobby-join-cancel" type="button">取消</button>
         </div>
+        <div class="lobby-section" style="margin-top:12px">
+          <div class="lobby-section-title" style="font-size:13px">所有房间（点击直接加入）</div>
+          <div id="lobby-all-rooms-list" class="lobby-rooms-list">
+            <div class="lobby-empty">加载中…</div>
+          </div>
+        </div>
       </section>
 
       <!-- 房间预览子面板 -->
@@ -344,6 +350,6 @@
   </div>
 </div>
 
-<script type="module" src="src/main.js?v=20261005o"></script>
+<script type="module" src="src/main.js?v=20261005p"></script>
 </body>
 </html>

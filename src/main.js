@@ -2,12 +2,12 @@
  * 点亮中国 · 入口：组装地图 / 状态 / 视听反馈与交互
  * 包含 Phase 2（音效/粒子/成就/城市下钻/称号/主题）与 Phase 3（多用户云同步/PK透视对战）
  */
-import { TOTAL_PROVINCES, MAX_MEMBERS, MEMBER_COLORS } from './config.js?v=20261005o';
-import { loadGeo, loadCityGeo, isCityGeoLoaded, getLoadedCityGeo } from './geo.js?v=20261005o';
-import { store } from './store.js?v=20261005o';
-import { buildMainMap, buildInset, applyThemeVars } from './map.js?v=20261005o';
-import { ensureCtx, setEnabled as setAudioEnabled, playLight, playUnlight, playAchievement } from './audio.js?v=20261005o';
-import { initParticles, burst as burstParticles, confetti as confettiParticles, setParticlesTheme, resizeParticles } from './particles.js?v=20261005o';
+import { TOTAL_PROVINCES, MAX_MEMBERS, MEMBER_COLORS } from './config.js?v=20261005p';
+import { loadGeo, loadCityGeo, isCityGeoLoaded, getLoadedCityGeo } from './geo.js?v=20261005p';
+import { store } from './store.js?v=20261005p';
+import { buildMainMap, buildInset, applyThemeVars } from './map.js?v=20261005p';
+import { ensureCtx, setEnabled as setAudioEnabled, playLight, playUnlight, playAchievement } from './audio.js?v=20261005p';
+import { initParticles, burst as burstParticles, confetti as confettiParticles, setParticlesTheme, resizeParticles } from './particles.js?v=20261005p';
 import {
   TITLES,
   ACHIEVEMENTS,
@@ -15,7 +15,7 @@ import {
   initProvinceAdcodes,
   getAdcode,
   checkAchievements,
-} from './achievements.js?v=20261005o';
+} from './achievements.js?v=20261005p';
 import {
   loadSpots,
   getSpotTotal,
@@ -24,9 +24,9 @@ import {
   getSpotTitleByCount,
   SPOT_TITLES,
   CAT_LABELS,
-} from './spots.js?v=20261005o';
-import { loadPoetry, getPoetry } from './poetry.js?v=20261005o';
-import { initLobby, showLobby, hideLobby } from './lobby.js?v=20261005o';
+} from './spots.js?v=20261005p';
+import { loadPoetry, getPoetry } from './poetry.js?v=20261005p';
+import { initLobby, showLobby, hideLobby } from './lobby.js?v=20261005p';
 import {
   initSync,
   createRoom,
@@ -39,7 +39,8 @@ import {
   subscribeSyncStatus,
   getRoomByPassword,
   updateRoomPassword,
-} from './sync.js?v=20261005o';
+  listRooms,
+} from './sync.js?v=20261005p';
 
 const $ = (id) => document.getElementById(id);
 const isTouch = matchMedia('(pointer: coarse)').matches;
@@ -1939,7 +1940,7 @@ async function init() {
   });
 
   // 初始化大厅（Phase 1 用户系统）
-  initLobby(store, { createRoom, joinRoom, fetchRoom, leaveRoom, claimIdentity, getRoomByPassword, updateRoomPassword }, {
+  initLobby(store, { createRoom, joinRoom, fetchRoom, leaveRoom, claimIdentity, getRoomByPassword, updateRoomPassword, listRooms }, {
     toast: (msg) => toast(msg),
     onEnterRoom: (code) => {
       // 进房后刷新顶部按钮

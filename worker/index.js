@@ -381,6 +381,30 @@ export default {
         return jsonResponse({ code, memberId: userId }, 201);
       }
 
+      // GET /api/rooms — 列出所有房间（供加入时浏览）
+      if (method === 'GET' && pathname === '/api/rooms') {
+        const listRes = await env.ROOMS_KV.list({ prefix: 'room:' });
+        const rooms = [];
+        for (const k of listRes.keys || []) {
+          const m = k.name.match(/^room:(\d{6})$/);
+          if (!m) continue;
+          const code = m[1];
+          const room = await getRoom(env, code);
+          if (!room) continue;
+          const entries = getMemberEntries(room);
+          rooms.push({
+            code,
+            name: room.name || '家庭房间',
+            memberCount: entries.length,
+            hasPassword: !!room.password,
+            createdAt: room.createdAt || 0,
+          });
+        }
+        // 按成员数倒序
+        rooms.sort((a, b) => b.memberCount - a.memberCount);
+        return jsonResponse({ rooms });
+      }
+
       // GET /api/rooms/by-password/:password — 根据密码查房间码（用于密码加入）
       const pwdMatch = pathname.match(/^\/api\/rooms\/by-password\/(.+)$/);
       if (method === 'GET' && pwdMatch) {
