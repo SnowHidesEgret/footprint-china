@@ -7,7 +7,7 @@
 <meta name="description" content="交互式中国地图足迹：点击你去过的省份，点亮属于你的山河版图。">
 <meta name="theme-color" content="#080c16">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗺️</text></svg>">
-<link rel="stylesheet" href="styles.css?v=20261005s">
+<link rel="stylesheet" href="styles.css?v=20261005t">
 <script type="importmap">
 { "imports": { "d3-geo": "https://esm.sh/d3-geo@3.1.1" } }
 </script>
@@ -230,10 +230,16 @@
         </div>
       </section>
 
-      <!-- 用户切换 -->
+      <!-- 用户切换（本机档案） -->
       <section class="lobby-section" id="lobby-users-section" style="display:none">
-        <h3 class="lobby-section-title">切换用户</h3>
+        <h3 class="lobby-section-title">本机身份 <span style="font-weight:normal;font-size:12px;color:#999">（这台设备上的档案）</span></h3>
         <div class="lobby-users-list" id="lobby-users-list"></div>
+      </section>
+
+      <!-- 当前房间成员 -->
+      <section class="lobby-section" id="lobby-members-section" style="display:none">
+        <h3 class="lobby-section-title">房间成员 <span style="font-weight:normal;font-size:12px;color:#999" id="lobby-members-room-name"></span></h3>
+        <div class="lobby-users-list" id="lobby-members-list"></div>
       </section>
 
       <!-- 我的房间 -->
@@ -350,6 +356,6 @@
   </div>
 </div>
 
-<script type="module" src="src/main.js?v=20261005s"></script>
+<script type="module" src="src/main.js?v=20261005t"></script>
 </body>
 </html>

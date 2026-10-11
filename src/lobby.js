@@ -73,6 +73,50 @@ function renderUserSwitch() {
   `).join('');
 }
 
+/**
+ * 渲染当前房间成员（只读，从服务端拉取）
+ */
+async function renderRoomMembers() {
+  const box = $('lobby-members-section');
+  const listEl = $('lobby-members-list');
+  const nameEl = $('lobby-members-room-name');
+  if (!box || !listEl) return;
+  
+  const activeCode = storeRef.getActiveRoomCode();
+  if (!activeCode) {
+    box.style.display = 'none';
+    return;
+  }
+  
+  box.style.display = '';
+  const room = storeRef.getRooms().find((r) => r.code === activeCode);
+  if (nameEl) nameEl.textContent = room ? `（${room.name}）` : '';
+  
+  listEl.innerHTML = '<div class="lobby-empty">加载中…</div>';
+  try {
+    const data = await syncRef.fetchRoom(activeCode);
+    const members = (data && Array.isArray(data.members)) ? data.members : [];
+    const meId = storeRef.getActiveUserId();
+    if (members.length === 0) {
+      listEl.innerHTML = '<div class="lobby-empty">暂无成员</div>';
+      return;
+    }
+    listEl.innerHTML = members.map((m) => {
+      const provCount = Object.keys(m.footprint?.provinces || {}).length;
+      const cityCount = Object.keys(m.footprint?.cities || {}).length;
+      const isMe = m.userId === meId;
+      return `
+      <div class="lobby-user-chip${isMe ? ' active' : ''}" style="cursor:default">
+        <span class="lobby-user-chip-dot" style="background:${esc(m.color || '#999')}"></span>
+        <span>${esc(m.nickname || '成员')}${isMe ? '（我）' : ''}</span>
+        <span style="font-size:11px;color:#999;margin-left:4px">${provCount}省${cityCount}市</span>
+      </div>`;
+    }).join('');
+  } catch {
+    listEl.innerHTML = '<div class="lobby-empty">加载失败</div>';
+  }
+}
+
 function renderRooms() {
   const rooms = storeRef.getRooms();
   const activeCode = storeRef.getActiveRoomCode();
@@ -140,6 +184,7 @@ function renderAll() {
   renderIdentity();
   renderUserSwitch();
   renderRooms();
+  renderRoomMembers();
   hideSubPanels();
 }
 
