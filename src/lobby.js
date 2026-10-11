@@ -555,6 +555,12 @@ function bindEvents() {
   // 创建房间
   $('lobby-create-btn').addEventListener('click', (e) => {
     e.stopPropagation();
+    // v2：游客不能创建房间
+    const sess = window._v2_session;
+    if (sess && sess.type === 'guest') {
+      notify('游客不能创建房间，请先注册账号');
+      return;
+    }
     $('lobby-create-name').value = '';
     $('lobby-create-name').placeholder = '房间名（默认：我们家）';
     showSubPanel('lobby-create-panel');
@@ -570,6 +576,12 @@ function bindEvents() {
   // 加入房间
   $('lobby-join-btn').addEventListener('click', (e) => {
     e.stopPropagation();
+    // v2：游客不能加入房间（可浏览）
+    const sess = window._v2_session;
+    if (sess && sess.type === 'guest') {
+      notify('游客不能加入房间，请先注册账号');
+      return;
+    }
     $('lobby-join-code').value = '';
     showSubPanel('lobby-join-panel');
     loadAllRooms();

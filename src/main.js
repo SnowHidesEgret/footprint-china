@@ -2,12 +2,12 @@
  * 点亮中国 · 入口：组装地图 / 状态 / 视听反馈与交互
  * 包含 Phase 2（音效/粒子/成就/城市下钻/称号/主题）与 Phase 3（多用户云同步/PK透视对战）
  */
-import { TOTAL_PROVINCES, MAX_MEMBERS, MEMBER_COLORS } from './config.js?v=20261005u';
-import { loadGeo, loadCityGeo, isCityGeoLoaded, getLoadedCityGeo } from './geo.js?v=20261005u';
-import { store } from './store.js?v=20261005u';
-import { buildMainMap, buildInset, applyThemeVars } from './map.js?v=20261005u';
-import { ensureCtx, setEnabled as setAudioEnabled, playLight, playUnlight, playAchievement } from './audio.js?v=20261005u';
-import { initParticles, burst as burstParticles, confetti as confettiParticles, setParticlesTheme, resizeParticles } from './particles.js?v=20261005u';
+import { TOTAL_PROVINCES, MAX_MEMBERS, MEMBER_COLORS } from './config.js?v=20261005v';
+import { loadGeo, loadCityGeo, isCityGeoLoaded, getLoadedCityGeo } from './geo.js?v=20261005v';
+import { store } from './store.js?v=20261005v';
+import { buildMainMap, buildInset, applyThemeVars } from './map.js?v=20261005v';
+import { ensureCtx, setEnabled as setAudioEnabled, playLight, playUnlight, playAchievement } from './audio.js?v=20261005v';
+import { initParticles, burst as burstParticles, confetti as confettiParticles, setParticlesTheme, resizeParticles } from './particles.js?v=20261005v';
 import {
   TITLES,
   ACHIEVEMENTS,
@@ -15,7 +15,7 @@ import {
   initProvinceAdcodes,
   getAdcode,
   checkAchievements,
-} from './achievements.js?v=20261005u';
+} from './achievements.js?v=20261005v';
 import {
   loadSpots,
   getSpotTotal,
@@ -24,9 +24,9 @@ import {
   getSpotTitleByCount,
   SPOT_TITLES,
   CAT_LABELS,
-} from './spots.js?v=20261005u';
-import { loadPoetry, getPoetry } from './poetry.js?v=20261005u';
-import { initLobby, showLobby, hideLobby } from './lobby.js?v=20261005u';
+} from './spots.js?v=20261005v';
+import { loadPoetry, getPoetry } from './poetry.js?v=20261005v';
+import { initLobby, showLobby, hideLobby } from './lobby.js?v=20261005v';
 import {
   initSync,
   createRoom,
@@ -41,7 +41,8 @@ import {
   updateRoomPassword,
   listRooms,
   apiRequest,
-} from './sync.js?v=20261005u';
+  setGuestMode,
+} from './sync.js?v=20261005v';
 import {
   getSession,
   saveSession,
@@ -51,8 +52,8 @@ import {
   getGuestFootprint,
   saveGuestFootprint,
   setApiRequest,
-} from './auth.js?v=20261005u';
-import { initAuthUI, showAuth, hideAuth } from './auth-ui.js?v=20261005u';
+} from './auth.js?v=20261005v';
+import { initAuthUI, showAuth, hideAuth } from './auth-ui.js?v=20261005v';
 
 const $ = (id) => document.getElementById(id);
 const isTouch = matchMedia('(pointer: coarse)').matches;
@@ -1973,6 +1974,10 @@ async function init() {
     // 游客：隐藏 PK 按钮
     const pkBtn = document.getElementById('pk-btn');
     if (pkBtn) pkBtn.style.display = 'none';
+    // 游客模式：足迹只存本地
+    setGuestMode(true, (fp) => {
+      saveGuestFootprint(session.guestId, fp);
+    });
     // 游客横幅按钮
     document.getElementById('guest-register-btn').addEventListener('click', () => {
       clearSession();

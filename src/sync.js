@@ -2,11 +2,24 @@
  * 点亮中国 · 同步层（封装 Worker API 客户端与离线容灾）
  * 2 秒防抖自动 PUT 同步、打开/加入拉取全家数据、无网络静默降级
  */
-import { SYNC_DEBOUNCE_MS, SYNC_API_BASE } from './config.js?v=20261005u';
+import { SYNC_DEBOUNCE_MS, SYNC_API_BASE } from './config.js?v=20261005v';
 
 let syncTimer = null;
 let syncStatus = 'idle'; // 'idle' | 'syncing' | 'saved' | 'offline'
 const statusListeners = new Set();
+
+// v2：游客模式标志（游客不上云，只存本地）
+let guestMode = false;
+let guestSaveFn = null;
+
+export function setGuestMode(enabled, saveFn) {
+  guestMode = enabled;
+  guestSaveFn = saveFn;
+}
+
+export function isGuestMode() {
+  return guestMode;
+}
 
 function setStatus(s) {
   if (syncStatus === s) return;
@@ -266,6 +279,22 @@ export function scheduleAutoSync(store) {
   }
 
   clearTimeout(syncTimer);
+
+  // v2：游客模式只存本地，不上云
+  if (guestMode) {
+    syncTimer = setTimeout(() => {
+      if (guestSaveFn) {
+        try {
+          guestSaveFn(fp);
+          setStatus('saved');
+        } catch {
+          setStatus('offline');
+        }
+      }
+    }, 500);
+    return;
+  }
+
   setStatus('syncing');
 
   syncTimer = setTimeout(async () => {
