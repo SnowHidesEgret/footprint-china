@@ -2,12 +2,12 @@
  * 点亮中国 · 入口：组装地图 / 状态 / 视听反馈与交互
  * 包含 Phase 2（音效/粒子/成就/城市下钻/称号/主题）与 Phase 3（多用户云同步/PK透视对战）
  */
-import { TOTAL_PROVINCES, MAX_MEMBERS, MEMBER_COLORS } from './config.js?v=20261005m';
-import { loadGeo, loadCityGeo, isCityGeoLoaded, getLoadedCityGeo } from './geo.js?v=20261005m';
-import { store } from './store.js?v=20261005m';
-import { buildMainMap, buildInset, applyThemeVars } from './map.js?v=20261005m';
-import { ensureCtx, setEnabled as setAudioEnabled, playLight, playUnlight, playAchievement } from './audio.js?v=20261005m';
-import { initParticles, burst as burstParticles, confetti as confettiParticles, setParticlesTheme, resizeParticles } from './particles.js?v=20261005m';
+import { TOTAL_PROVINCES, MAX_MEMBERS, MEMBER_COLORS } from './config.js?v=20261005n';
+import { loadGeo, loadCityGeo, isCityGeoLoaded, getLoadedCityGeo } from './geo.js?v=20261005n';
+import { store } from './store.js?v=20261005n';
+import { buildMainMap, buildInset, applyThemeVars } from './map.js?v=20261005n';
+import { ensureCtx, setEnabled as setAudioEnabled, playLight, playUnlight, playAchievement } from './audio.js?v=20261005n';
+import { initParticles, burst as burstParticles, confetti as confettiParticles, setParticlesTheme, resizeParticles } from './particles.js?v=20261005n';
 import {
   TITLES,
   ACHIEVEMENTS,
@@ -15,7 +15,7 @@ import {
   initProvinceAdcodes,
   getAdcode,
   checkAchievements,
-} from './achievements.js?v=20261005m';
+} from './achievements.js?v=20261005n';
 import {
   loadSpots,
   getSpotTotal,
@@ -24,9 +24,9 @@ import {
   getSpotTitleByCount,
   SPOT_TITLES,
   CAT_LABELS,
-} from './spots.js?v=20261005m';
-import { loadPoetry, getPoetry } from './poetry.js?v=20261005m';
-import { initLobby, showLobby, hideLobby } from './lobby.js?v=20261005m';
+} from './spots.js?v=20261005n';
+import { loadPoetry, getPoetry } from './poetry.js?v=20261005n';
+import { initLobby, showLobby, hideLobby } from './lobby.js?v=20261005n';
 import {
   initSync,
   createRoom,
@@ -37,7 +37,7 @@ import {
   putMember as putRemoteMember,
   deleteMember as deleteRemoteMember,
   subscribeSyncStatus,
-} from './sync.js?v=20261005m';
+} from './sync.js?v=20261005n';
 
 const $ = (id) => document.getElementById(id);
 const isTouch = matchMedia('(pointer: coarse)').matches;
@@ -1957,8 +1957,72 @@ async function init() {
     onRoomLeft: () => {
       renderMemberButton();
     },
-    onClaim: (code, fromUserId) => {
-      toast('认领功能即将上线');
+    onClaim: async (code, fromUserId) => {
+      const me = store.getActiveUser();
+      if (!me) {
+        toast('请先创建用户身份');
+        return;
+      }
+      if (me.userId === fromUserId) {
+        toast('这已经是你的身份了');
+        return;
+      }
+      // 二次确认
+      if (!window.confirm('认领后，你的足迹将与该身份合并，且不可撤销。确定吗？')) return;
+      
+      toast('正在认领…');
+      const ok = await claimIdentity(code, fromUserId, me.userId);
+      if (!ok) {
+        toast('认领失败，请检查网络后重试');
+        return;
+      }
+      // 从服务端拉取合并后的用户数据
+      try {
+        const res = await fetch(`https://sync.snowyegret.top/api/users/${me.userId}`);
+        if (res.ok) {
+          const userData = await res.json();
+          // 更新本地足迹
+          if (userData.footprint) {
+            const fp = store.getActiveFootprint();
+            if (fp) {
+              Object.assign(fp, {
+                provinces: userData.footprint.provinces || {},
+                cities: userData.footprint.cities || {},
+                spots: userData.footprint.spots || {},
+                memos: userData.footprint.memos || {},
+                unlockedAchievements: userData.footprint.unlockedAchievements || [],
+                maxTitleLevel: userData.footprint.maxTitleLevel || 0,
+                updatedAt: Date.now(),
+              });
+            }
+          }
+          // 采用被认领者的昵称和配色
+          if (userData.nickname) {
+            store.updateUser(me.userId, { nickname: userData.nickname });
+          }
+          if (userData.color) {
+            store.updateUser(me.userId, { color: userData.color });
+          }
+          // 确保房间在列表中
+          if (userData.roomCodes && userData.roomCodes.includes(code)) {
+            store.addRoom(code, '', 'member');
+          }
+          toast(`✅ 已认领「${userData.nickname || '该身份'}」的足迹`);
+          // 刷新地图
+          if (mapApi) {
+            mapApi.update(
+              (c) => store.isLit(c),
+              (c) => store.isCityLit(c),
+              store.isPkMode() ? store.getPkStats() : null
+            );
+          }
+          renderProgress();
+          renderMemberButton();
+        }
+      } catch (e) {
+        console.error('拉取合并后数据失败:', e);
+        toast('认领成功，但本地数据同步失败，请刷新页面');
+      }
     },
   });
 
