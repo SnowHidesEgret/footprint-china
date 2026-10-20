@@ -140,3 +140,9 @@ python3 -m http.server 8000
 - 建房时可设 4 位数字密码，加入时输密码即可（不用记 6 位码）
 - 房主可在大厅房间列表点"密码"重设（留空清除）
 - Worker 新增 `GET /api/rooms/by-password/:pwd` 查询接口，`PATCH` 支持改密码
+
+### 存储迁移 KV → D1（2026-10-20）
+- Worker 数据层由 Cloudflare KV 迁至 D1（SQLite）：users / rooms / room_members 三表
+- 房间成员改为关系表存储；按昵称查用户、房间列表统计等改为 SQL 查询（原先需全量扫描）
+- Worker 首次请求自动建表（ensureSchema）；绑定名 DB，数据库 footprint-china
+- API 接口不变，前端零改动；旧 KV 数据已于迁移前由用户拍板清空

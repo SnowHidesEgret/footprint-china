@@ -1,10 +1,11 @@
 /**
- * 点亮中国 · 多用户云同步 Worker（Phase 1：用户与房间系统）
- * 基于 Cloudflare Workers & KV，提供用户档案、家庭房间与足迹同步服务
+ * 点亮中国 · 多用户云同步 Worker（Phase 1：用户与房间系统 + v2 账号）
+ * 基于 Cloudflare Workers & D1（SQLite），提供用户档案、家庭房间与足迹同步服务
  *
- * 数据模型：
- * - user:{userId} → {userId, nickname, color, footprint, roomCodes[], createdAt, updatedAt, mergedInto}
- * - room:{code}   → {code, name, ownerUserId, createdAt, memberUserIds: [{userId, joinedAt}]}
+ * 数据模型（D1，2026-10-20 由 KV 迁移）：
+ * - users 表：user_id 主键，含 username/password_hash/nickname/color/footprint(JSON)
+ * - rooms 表：code 主键，含 name/password/owner_user_id
+ * - room_members 表：(room_code, user_id) 关系表；user.roomCodes 与 room.memberUserIds 均为其派生视图
  *
  * 设计原则：房间成员实时读用户档案，一处真相，从结构上消灭"名单与数据不一致"。
  */
@@ -71,37 +72,223 @@ function emptyFootprint() {
   };
 }
 
-/* ---------- KV 读写 helper ---------- */
+/* ---------- D1 读写 helper ---------- */
+
+function rowToUser(row, roomCodes) {
+  if (!row) return null;
+  let footprint;
+  try {
+    footprint = JSON.parse(row.footprint || '{}');
+  } catch {
+    footprint = emptyFootprint();
+  }
+  if (!footprint || typeof footprint !== 'object' || !footprint.provinces) {
+    footprint = { ...emptyFootprint(), ...footprint };
+  }
+  const user = {
+    userId: row.user_id,
+    nickname: row.nickname || '',
+    color: row.color || DEFAULT_COLORS[0],
+    footprint,
+    roomCodes: roomCodes || [],
+    createdAt: row.created_at || 0,
+    updatedAt: row.updated_at || 0,
+    mergedInto: row.merged_into || null,
+  };
+  if (row.username) user.username = row.username;
+  if (row.password_hash) user.passwordHash = row.password_hash;
+  if (row.v2) user.v2 = true;
+  if (row.claimed_from) user.claimedFrom = row.claimed_from;
+  return user;
+}
+
+async function getUserRoomCodes(env, userId) {
+  const res = await env.DB.prepare(
+    'SELECT room_code FROM room_members WHERE user_id = ?'
+  ).bind(userId).all();
+  return (res.results || []).map((r) => r.room_code);
+}
 
 /** 读取用户档案，不存在返回 null */
 async function getUser(env, userId) {
   if (!userId) return null;
   try {
-    const raw = await env.ROOMS_KV.get(`user:${userId}`);
-    if (!raw) return null;
-    return JSON.parse(raw);
+    const row = await env.DB.prepare('SELECT * FROM users WHERE user_id = ?').bind(userId).first();
+    if (!row) return null;
+    const roomCodes = await getUserRoomCodes(env, userId);
+    return rowToUser(row, roomCodes);
   } catch {
     return null;
   }
 }
 
 async function putUser(env, user) {
-  await env.ROOMS_KV.put(`user:${user.userId}`, JSON.stringify(user));
+  await env.DB.prepare(
+    `INSERT INTO users (user_id, username, password_hash, nickname, color, footprint, created_at, updated_at, merged_into, v2, claimed_from)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(user_id) DO UPDATE SET
+       username = excluded.username,
+       password_hash = excluded.password_hash,
+       nickname = excluded.nickname,
+       color = excluded.color,
+       footprint = excluded.footprint,
+       updated_at = excluded.updated_at,
+       merged_into = excluded.merged_into,
+       v2 = excluded.v2,
+       claimed_from = excluded.claimed_from`
+  ).bind(
+    user.userId,
+    user.username || null,
+    user.passwordHash || null,
+    user.nickname || '',
+    user.color || DEFAULT_COLORS[0],
+    JSON.stringify(user.footprint || emptyFootprint()),
+    user.createdAt || Date.now(),
+    user.updatedAt || Date.now(),
+    user.mergedInto || null,
+    user.v2 ? 1 : 0,
+    user.claimedFrom || null
+  ).run();
+
+  // 成员关系以 user.roomCodes 为准做对账（增删 room_members 行）
+  if (Array.isArray(user.roomCodes)) {
+    const current = await getUserRoomCodes(env, user.userId);
+    const target = new Set(user.roomCodes.filter((c) => /^\d{6}$/.test(c)));
+    for (const code of current) {
+      if (!target.has(code)) {
+        await env.DB.prepare(
+          'DELETE FROM room_members WHERE room_code = ? AND user_id = ?'
+        ).bind(code, user.userId).run();
+      }
+    }
+    for (const code of target) {
+      if (!current.includes(code)) {
+        const roomRow = await env.DB.prepare('SELECT code FROM rooms WHERE code = ?').bind(code).first();
+        if (roomRow) {
+          await env.DB.prepare(
+            'INSERT OR IGNORE INTO room_members (room_code, user_id, joined_at) VALUES (?, ?, ?)'
+          ).bind(code, user.userId, Date.now()).run();
+        }
+      }
+    }
+  }
 }
 
-/** 读取房间，不存在返回 null */
+/** 读取房间（含成员名单），不存在返回 null */
 async function getRoom(env, code) {
   try {
-    const raw = await env.ROOMS_KV.get(`room:${code}`);
-    if (!raw) return null;
-    return JSON.parse(raw);
+    const row = await env.DB.prepare('SELECT * FROM rooms WHERE code = ?').bind(code).first();
+    if (!row) return null;
+    const mres = await env.DB.prepare(
+      'SELECT user_id, joined_at FROM room_members WHERE room_code = ? ORDER BY joined_at ASC'
+    ).bind(code).all();
+    const room = {
+      code: row.code,
+      name: row.name || '家庭房间',
+      ownerUserId: row.owner_user_id || null,
+      createdAt: row.created_at || 0,
+      memberUserIds: (mres.results || []).map((r) => ({ userId: r.user_id, joinedAt: r.joined_at || 0 })),
+    };
+    if (row.password) room.password = row.password;
+    return room;
   } catch {
     return null;
   }
 }
 
 async function putRoom(env, room) {
-  await env.ROOMS_KV.put(`room:${room.code}`, JSON.stringify(room));
+  await env.DB.prepare(
+    `INSERT INTO rooms (code, name, password, owner_user_id, created_at)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(code) DO UPDATE SET
+       name = excluded.name,
+       password = excluded.password,
+       owner_user_id = excluded.owner_user_id`
+  ).bind(
+    room.code,
+    room.name || '家庭房间',
+    room.password || null,
+    room.ownerUserId || null,
+    room.createdAt || Date.now()
+  ).run();
+
+  // 成员名单以 room.memberUserIds 为准做对账
+  const entries = getMemberEntries(room);
+  const cres = await env.DB.prepare(
+    'SELECT user_id FROM room_members WHERE room_code = ?'
+  ).bind(room.code).all();
+  const currentIds = new Set((cres.results || []).map((r) => r.user_id));
+  const targetIds = new Set(entries.map((e) => e.userId));
+  for (const uid of currentIds) {
+    if (!targetIds.has(uid)) {
+      await env.DB.prepare(
+        'DELETE FROM room_members WHERE room_code = ? AND user_id = ?'
+      ).bind(room.code, uid).run();
+    }
+  }
+  for (const e of entries) {
+    if (!currentIds.has(e.userId)) {
+      await env.DB.prepare(
+        'INSERT OR IGNORE INTO room_members (room_code, user_id, joined_at) VALUES (?, ?, ?)'
+      ).bind(room.code, e.userId, e.joinedAt || Date.now()).run();
+    }
+  }
+}
+
+/** 删除房间及其全部成员关系 */
+async function deleteRoom(env, code) {
+  await env.DB.prepare('DELETE FROM room_members WHERE room_code = ?').bind(code).run();
+  await env.DB.prepare('DELETE FROM rooms WHERE code = ?').bind(code).run();
+}
+
+/** 按房间密码查房间码，不存在返回 null */
+async function findRoomCodeByPassword(env, password) {
+  const row = await env.DB.prepare('SELECT code FROM rooms WHERE password = ?').bind(password).first();
+  return row ? row.code : null;
+}
+
+/* ---------- 表结构自动初始化（Worker 绑定 D1 自带写权限；API token 无建表权限时兜底） ---------- */
+
+const SCHEMA_STATEMENTS = [
+  `CREATE TABLE IF NOT EXISTS users (
+     user_id TEXT PRIMARY KEY,
+     username TEXT,
+     password_hash TEXT,
+     nickname TEXT NOT NULL DEFAULT '',
+     color TEXT,
+     footprint TEXT NOT NULL DEFAULT '{}',
+     created_at INTEGER,
+     updated_at INTEGER,
+     merged_into TEXT,
+     v2 INTEGER NOT NULL DEFAULT 0,
+     claimed_from TEXT
+   )`,
+  'CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username)',
+  'CREATE INDEX IF NOT EXISTS idx_users_nickname ON users(nickname)',
+  `CREATE TABLE IF NOT EXISTS rooms (
+     code TEXT PRIMARY KEY,
+     name TEXT,
+     password TEXT,
+     owner_user_id TEXT,
+     created_at INTEGER
+   )`,
+  'CREATE UNIQUE INDEX IF NOT EXISTS idx_rooms_password ON rooms(password)',
+  `CREATE TABLE IF NOT EXISTS room_members (
+     room_code TEXT NOT NULL,
+     user_id TEXT NOT NULL,
+     joined_at INTEGER,
+     PRIMARY KEY (room_code, user_id)
+   )`,
+  'CREATE INDEX IF NOT EXISTS idx_members_user ON room_members(user_id)',
+];
+
+let schemaReady = false;
+async function ensureSchema(env) {
+  if (schemaReady) return;
+  for (const sql of SCHEMA_STATEMENTS) {
+    await env.DB.prepare(sql).run();
+  }
+  schemaReady = true;
 }
 
 /* ---------- 房间成员名单 helper ---------- */
@@ -247,6 +434,14 @@ export default {
       });
     }
 
+    // 首次请求时自动建表（IF NOT EXISTS 幂等）
+    try {
+      await ensureSchema(env);
+    } catch (err) {
+      console.error('Schema init failed:', err);
+      return errorResponse('数据库初始化失败', 500);
+    }
+
     const url = new URL(request.url);
     const pathname = url.pathname;
     const method = request.method.toUpperCase();
@@ -316,7 +511,7 @@ export default {
         let code = '';
         for (let i = 0; i < 5; i++) {
           const tryCode = generateRoomCode();
-          const existing = await env.ROOMS_KV.get(`room:${tryCode}`);
+          const existing = await getRoom(env, tryCode);
           if (!existing) {
             code = tryCode;
             break;
@@ -330,12 +525,12 @@ export default {
           const roomName = (body.name || '家庭房间').trim().slice(0, 20) || '家庭房间';
           const password = typeof body.password === 'string' ? body.password.trim() : '';
           
-          // 密码为 4 位数字，唯一性检查
+          // 密码为 4 位数字，唯一性检查（rooms.password 唯一索引）
           if (password) {
             if (!/^\d{4}$/.test(password)) {
               return errorResponse('密码必须为 4 位数字', 400);
             }
-            const existingCode = await env.ROOMS_KV.get(`pwd:${password}`);
+            const existingCode = await findRoomCodeByPassword(env, password);
             if (existingCode) {
               return errorResponse('该密码已被使用，请换一个', 400);
             }
@@ -368,7 +563,6 @@ export default {
           };
           if (password) {
             room.password = password;
-            await env.ROOMS_KV.put(`pwd:${password}`, code);
           }
           await putRoom(env, room);
           return jsonResponse({ code }, 201);
@@ -412,8 +606,8 @@ export default {
         if (!isValidPin(password)) {
           return errorResponse('密码必须为 4 位数字', 400);
         }
-        // 用户名全站唯一，key 为 acct:{username}
-        const existing = await env.ROOMS_KV.get(`acct:${username}`);
+        // 用户名全站唯一（v2 用户名即 userId，users 表主键/唯一索引保证）
+        const existing = await getUser(env, username);
         if (existing) {
           return errorResponse('用户名已被注册', 409);
         }
@@ -431,7 +625,6 @@ export default {
           mergedInto: null,
           v2: true,
         };
-        await env.ROOMS_KV.put(`acct:${username}`, JSON.stringify({ username }));
         await putUser(env, user);
         // 返回时去掉密码哈希
         const { passwordHash, ...safe } = user;
@@ -485,23 +678,24 @@ export default {
       if (method === 'GET' && pathname === '/api/auth/find-legacy') {
         const nickname = (url.searchParams.get('nickname') || '').trim();
         if (!nickname) return errorResponse('请输入昵称', 400);
-        // 遍历所有 user:{m_*} 找昵称匹配且未被领走的
-        const listRes = await env.ROOMS_KV.list({ prefix: 'user:m_' });
+        // D1 直接按昵称查未迁移的老用户（v1 的 user_id 以 m_ 开头）
+        const res = await env.DB.prepare(
+          "SELECT * FROM users WHERE nickname = ? AND merged_into IS NULL AND v2 = 0 AND user_id LIKE 'm_%'"
+        ).bind(nickname).all();
         const matches = [];
-        for (const k of listRes.keys || []) {
-          const user = await getUser(env, k.name.slice(5)); // 去掉 'user:' 前缀
-          if (user && user.nickname === nickname && !user.mergedInto && !user.v2) {
-            const provCount = Object.keys(user.footprint?.provinces || {}).length;
-            const cityCount = Object.keys(user.footprint?.cities || {}).length;
-            matches.push({
-              userId: user.userId,
-              nickname: user.nickname,
-              color: user.color,
-              provCount,
-              cityCount,
-              roomCodes: user.roomCodes || [],
-            });
-          }
+        for (const row of res.results || []) {
+          const roomCodes = await getUserRoomCodes(env, row.user_id);
+          const user = rowToUser(row, roomCodes);
+          const provCount = Object.keys(user.footprint?.provinces || {}).length;
+          const cityCount = Object.keys(user.footprint?.cities || {}).length;
+          matches.push({
+            userId: user.userId,
+            nickname: user.nickname,
+            color: user.color,
+            provCount,
+            cityCount,
+            roomCodes: user.roomCodes || [],
+          });
         }
         return jsonResponse({ matches });
       }
@@ -522,8 +716,8 @@ export default {
           username = `u_${Date.now().toString(36).slice(-6)}`;
         }
         // 检查用户名是否已被占用
-        const acctExists = await env.ROOMS_KV.get(`acct:${username}`);
-        if (acctExists) {
+        const acctUser = await getUser(env, username);
+        if (acctUser) {
           return errorResponse(`"${username}" 已被注册，请换个用户名或联系家人`, 409);
         }
         // 查找老数据：在所有 user:{m_*} 中找昵称匹配的
@@ -548,7 +742,6 @@ export default {
           v2: true,
           claimedFrom: legacyUserId || null,
         };
-        await env.ROOMS_KV.put(`acct:${username}`, JSON.stringify({ username }));
         await putUser(env, newUser);
         // 更新房间成员列表中的 userId（把老 id 换成新 username）
         if (legacyUser && newUser.roomCodes.length > 0) {
@@ -576,25 +769,19 @@ export default {
 
       // GET /api/rooms — 列出所有房间（供加入时浏览）
       if (method === 'GET' && pathname === '/api/rooms') {
-        const listRes = await env.ROOMS_KV.list({ prefix: 'room:' });
-        const rooms = [];
-        for (const k of listRes.keys || []) {
-          const m = k.name.match(/^room:(\d{6})$/);
-          if (!m) continue;
-          const code = m[1];
-          const room = await getRoom(env, code);
-          if (!room) continue;
-          const entries = getMemberEntries(room);
-          rooms.push({
-            code,
-            name: room.name || '家庭房间',
-            memberCount: entries.length,
-            hasPassword: !!room.password,
-            createdAt: room.createdAt || 0,
-          });
-        }
-        // 按成员数倒序
-        rooms.sort((a, b) => b.memberCount - a.memberCount);
+        const res = await env.DB.prepare(
+          `SELECT r.code, r.name, r.password, r.created_at,
+                  (SELECT COUNT(*) FROM room_members m WHERE m.room_code = r.code) AS member_count
+           FROM rooms r
+           ORDER BY member_count DESC`
+        ).all();
+        const rooms = (res.results || []).map((row) => ({
+          code: row.code,
+          name: row.name || '家庭房间',
+          memberCount: row.member_count || 0,
+          hasPassword: !!row.password,
+          createdAt: row.created_at || 0,
+        }));
         return jsonResponse({ rooms });
       }
 
@@ -603,7 +790,7 @@ export default {
       if (method === 'GET' && pwdMatch) {
         const password = decodeURIComponent(pwdMatch[1]).trim();
         if (!/^\d{4}$/.test(password)) return errorResponse('密码为 4 位数字', 400);
-        const code = await env.ROOMS_KV.get(`pwd:${password}`);
+        const code = await findRoomCodeByPassword(env, password);
         if (!code) return errorResponse('密码不正确或房间不存在', 404);
         return jsonResponse({ code });
       }
@@ -645,17 +832,12 @@ export default {
           if (newPwd && !/^\d{4}$/.test(newPwd)) {
             return errorResponse('密码必须为 4 位数字', 400);
           }
-          // 清除旧密码索引
-          if (room.password) {
-            await env.ROOMS_KV.delete(`pwd:${room.password}`);
-          }
           if (newPwd) {
-            const existingCode = await env.ROOMS_KV.get(`pwd:${newPwd}`);
+            const existingCode = await findRoomCodeByPassword(env, newPwd);
             if (existingCode && existingCode !== code) {
               return errorResponse('该密码已被使用，请换一个', 400);
             }
             room.password = newPwd;
-            await env.ROOMS_KV.put(`pwd:${newPwd}`, code);
           } else {
             delete room.password;
           }
@@ -789,7 +971,7 @@ export default {
         }
 
         if (getMemberEntries(room).length === 0) {
-          await env.ROOMS_KV.delete(`room:${code}`);
+          await deleteRoom(env, code);
           return jsonResponse({ ok: true });
         }
         if (wasOwner) succeedOwner(room);
@@ -853,7 +1035,7 @@ export default {
         }
 
         if (getMemberEntries(room).length === 0) {
-          await env.ROOMS_KV.delete(`room:${code}`);
+          await deleteRoom(env, code);
           return jsonResponse({ ok: true });
         }
         if (wasOwner) succeedOwner(room);
