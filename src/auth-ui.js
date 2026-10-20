@@ -2,8 +2,8 @@
  * 点亮中国 · v2 登录页 UI 逻辑
  */
 
-import { register, login, guestLogin, saveSession, claimLegacy } from './auth.js?v=20261005x';
-import { apiRequest } from './sync.js?v=20261005x';
+import { register, login, guestLogin, saveSession, claimLegacy } from './auth.js?v=20261005y';
+import { apiRequest } from './sync.js?v=20261005y';
 
 let onAuthed = null; // (session) => void
 

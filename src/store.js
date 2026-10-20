@@ -3,10 +3,10 @@
  * v5: 用户身份解耦（users + footprints），房间列表化（rooms），支持大厅与认领
  * 本地多用户隔离 + 老数据平滑迁移 + 离线缓存
  */
-import { TOTAL_PROVINCES, MAX_MEMBERS, MEMBER_COLORS } from './config.js?v=20261005x';
-import { storage } from './geo.js?v=20261005x';
-import { KNOWN_ACHIEVEMENTS } from './achievements.js?v=20261005x';
-import { spotKey } from './spots.js?v=20261005x';
+import { TOTAL_PROVINCES, MAX_MEMBERS, MEMBER_COLORS } from './config.js?v=20261005y';
+import { storage } from './geo.js?v=20261005y';
+import { KNOWN_ACHIEVEMENTS } from './achievements.js?v=20261005y';
+import { spotKey } from './spots.js?v=20261005y';
 
 const VALID_THEMES = ['dark', 'light'];
 
@@ -345,6 +345,80 @@ class Store {
       user.updatedAt = Date.now();
       this._commit();
     }
+    return true;
+  }
+
+  /**
+   * v2：用云端账号档案覆盖本地状态（登录后调用）
+   * 本地只保留当前登录账号一人，足迹以云端为准，避免旧本地数据串号
+   * @param {Object} cloudUser Worker 返回的用户档案
+   */
+  applyCloudProfile(cloudUser) {
+    if (!cloudUser || !cloudUser.userId) return false;
+    const now = Date.now();
+    const fp = cloudUser.footprint || {};
+    this.state.users = [{
+      userId: cloudUser.userId,
+      nickname: cloudUser.nickname || cloudUser.username || '我',
+      color: cloudUser.color || MEMBER_COLORS[0].value,
+      createdAt: cloudUser.createdAt || now,
+      updatedAt: cloudUser.updatedAt || now,
+    }];
+    this.state.footprints = {
+      [cloudUser.userId]: {
+        provinces: fp.provinces || {},
+        cities: fp.cities || {},
+        spots: fp.spots || {},
+        memos: fp.memos || {},
+        unlockedAchievements: fp.unlockedAchievements || [],
+        maxTitleLevel: fp.maxTitleLevel || 0,
+        updatedAt: cloudUser.updatedAt || now,
+      },
+    };
+    this.state.activeUserId = cloudUser.userId;
+    // 房间以云端 roomCodes 为准（名称进大厅后刷新）
+    const codes = Array.isArray(cloudUser.roomCodes) ? cloudUser.roomCodes : [];
+    const oldRooms = this.state.rooms || [];
+    this.state.rooms = codes.map((code) => {
+      const old = oldRooms.find((r) => r.code === code);
+      return old || { code, name: '家庭房间', role: 'member', lastOpenedAt: now };
+    });
+    if (this.state.activeRoomCode && !codes.includes(this.state.activeRoomCode)) {
+      this.state.activeRoomCode = codes[0] || null;
+    }
+    this._commit();
+    return true;
+  }
+
+  /**
+   * v2：游客会话覆盖本地状态（游客足迹只存本地）
+   */
+  applyGuestProfile(session, footprint) {
+    const now = Date.now();
+    const guestId = session.guestId;
+    const fp = footprint || {};
+    this.state.users = [{
+      userId: guestId,
+      nickname: session.nickname || '游客',
+      color: MEMBER_COLORS[0].value,
+      createdAt: now,
+      updatedAt: now,
+    }];
+    this.state.footprints = {
+      [guestId]: {
+        provinces: fp.provinces || {},
+        cities: fp.cities || {},
+        spots: fp.spots || {},
+        memos: fp.memos || {},
+        unlockedAchievements: fp.unlockedAchievements || [],
+        maxTitleLevel: fp.maxTitleLevel || 0,
+        updatedAt: fp.updatedAt || now,
+      },
+    };
+    this.state.activeUserId = guestId;
+    this.state.rooms = [];
+    this.state.activeRoomCode = null;
+    this._commit();
     return true;
   }
 

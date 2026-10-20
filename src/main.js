@@ -2,12 +2,12 @@
  * 点亮中国 · 入口：组装地图 / 状态 / 视听反馈与交互
  * 包含 Phase 2（音效/粒子/成就/城市下钻/称号/主题）与 Phase 3（多用户云同步/PK透视对战）
  */
-import { TOTAL_PROVINCES, MAX_MEMBERS, MEMBER_COLORS } from './config.js?v=20261005x';
-import { loadGeo, loadCityGeo, isCityGeoLoaded, getLoadedCityGeo } from './geo.js?v=20261005x';
-import { store } from './store.js?v=20261005x';
-import { buildMainMap, buildInset, applyThemeVars } from './map.js?v=20261005x';
-import { ensureCtx, setEnabled as setAudioEnabled, playLight, playUnlight, playAchievement } from './audio.js?v=20261005x';
-import { initParticles, burst as burstParticles, confetti as confettiParticles, setParticlesTheme, resizeParticles } from './particles.js?v=20261005x';
+import { TOTAL_PROVINCES, MAX_MEMBERS, MEMBER_COLORS } from './config.js?v=20261005y';
+import { loadGeo, loadCityGeo, isCityGeoLoaded, getLoadedCityGeo } from './geo.js?v=20261005y';
+import { store } from './store.js?v=20261005y';
+import { buildMainMap, buildInset, applyThemeVars } from './map.js?v=20261005y';
+import { ensureCtx, setEnabled as setAudioEnabled, playLight, playUnlight, playAchievement } from './audio.js?v=20261005y';
+import { initParticles, burst as burstParticles, confetti as confettiParticles, setParticlesTheme, resizeParticles } from './particles.js?v=20261005y';
 import {
   TITLES,
   ACHIEVEMENTS,
@@ -15,7 +15,7 @@ import {
   initProvinceAdcodes,
   getAdcode,
   checkAchievements,
-} from './achievements.js?v=20261005x';
+} from './achievements.js?v=20261005y';
 import {
   loadSpots,
   getSpotTotal,
@@ -24,9 +24,9 @@ import {
   getSpotTitleByCount,
   SPOT_TITLES,
   CAT_LABELS,
-} from './spots.js?v=20261005x';
-import { loadPoetry, getPoetry } from './poetry.js?v=20261005x';
-import { initLobby, showLobby, hideLobby } from './lobby.js?v=20261005x';
+} from './spots.js?v=20261005y';
+import { loadPoetry, getPoetry } from './poetry.js?v=20261005y';
+import { initLobby, showLobby, hideLobby } from './lobby.js?v=20261005y';
 import {
   initSync,
   createRoom,
@@ -42,7 +42,7 @@ import {
   listRooms,
   apiRequest,
   setGuestMode,
-} from './sync.js?v=20261005x';
+} from './sync.js?v=20261005y';
 import {
   getSession,
   saveSession,
@@ -51,8 +51,8 @@ import {
   isUser,
   getGuestFootprint,
   saveGuestFootprint,
-} from './auth.js?v=20261005x';
-import { initAuthUI, showAuth, hideAuth } from './auth-ui.js?v=20261005x';
+} from './auth.js?v=20261005y';
+import { initAuthUI, showAuth, hideAuth } from './auth-ui.js?v=20261005y';
 
 const $ = (id) => document.getElementById(id);
 const isTouch = matchMedia('(pointer: coarse)').matches;
@@ -1983,6 +1983,18 @@ async function init() {
       clearSession();
       location.reload();
     });
+    // 游客：本地只保留游客本人（清掉旧账号残留显示）
+    store.applyGuestProfile(session, getGuestFootprint(session.guestId));
+  } else if (isUser(session)) {
+    // 注册用户：拉云端档案覆盖本地（本地旧数据不得串到新账号上）
+    try {
+      const cloudUser = await apiRequest(`/api/users/${encodeURIComponent(session.username)}`);
+      if (cloudUser && cloudUser.userId) {
+        store.applyCloudProfile(cloudUser);
+      }
+    } catch {
+      console.warn('云端档案拉取失败，沿用本地数据');
+    }
   }
 
   try {
