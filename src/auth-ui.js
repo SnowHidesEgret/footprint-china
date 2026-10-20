@@ -2,8 +2,8 @@
  * 点亮中国 · v2 登录页 UI 逻辑
  */
 
-import { register, login, guestLogin, saveSession, claimLegacy } from './auth.js';
-import { apiRequest } from './sync.js';
+import { register, login, guestLogin, saveSession, claimLegacy } from './auth.js?v=20261005x';
+import { apiRequest } from './sync.js?v=20261005x';
 
 let onAuthed = null; // (session) => void
 
@@ -164,7 +164,7 @@ function bindEvents() {
         showAuthError('用户名或密码错误');
       }
     } catch (e) {
-      showAuthError('登录失败，请检查网络');
+      showAuthError(e.message || '登录失败，请重试');
     } finally {
       btn.disabled = false;
       btn.textContent = '登录';
@@ -207,9 +207,7 @@ function bindEvents() {
         showAuthError('注册失败，请重试');
       }
     } catch (e) {
-      const msg = e.message || '';
-      if (msg.includes('已被注册')) showAuthError('用户名已被注册，换一个试试');
-      else showAuthError('注册失败，请检查网络');
+      showAuthError(e.message || '注册失败，请重试');
     } finally {
       btn.disabled = false;
       btn.textContent = '注册';

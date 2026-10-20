@@ -11,15 +11,25 @@
 const SESSION_KEY = 'footprint.session.v2';
 const GUEST_FP_KEY = 'footprint.guest.fp.v2';
 
-// 复用 sync.js 的 apiRequest
-let apiRequestFn = null;
-export function setApiRequest(fn) {
-  apiRequestFn = fn;
-}
+// 认证专用请求：直接 fetch，保留服务端错误信息（sync.js 的 apiRequest 失败时只回 null）
+import { SYNC_API_BASE } from './config.js?v=20261005x';
 
 async function api(path, body) {
-  if (!apiRequestFn) throw new Error('apiRequest 未初始化');
-  return apiRequestFn(path, { method: 'POST', body: JSON.stringify(body) });
+  let res;
+  try {
+    res = await fetch(`${SYNC_API_BASE}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw new Error('网络不通，请检查网络后重试');
+  }
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new Error((data && data.error) || `请求失败（${res.status}）`);
+  }
+  return data;
 }
 
 /* ---------- 会话管理 ---------- */
