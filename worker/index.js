@@ -10,7 +10,21 @@
  * 设计原则：房间成员实时读用户档案，一处真相，从结构上消灭"名单与数据不一致"。
  */
 
-const ALLOWED_ORIGIN = 'https://map.snowyegret.top';
+const PRODUCTION_ORIGIN = 'https://map.snowyegret.top';
+
+/**
+ * 跨域白名单：正式站 + 本项目 Pages 预览域名 + 本地开发。
+ * 预览域名形如 https://<分支>.footprint-china.pages.dev（Cloudflare Pages 分支预览），
+ * 没有它，预览站上的登录/同步请求会被浏览器 CORS 拦截（表现为“网络不通”）。
+ * 注意 CORS 不是安全边界（curl 可绕过），真正的鉴权靠各接口自身的校验；这里只放行自家域名。
+ */
+function resolveAllowedOrigin(origin) {
+  if (!origin) return PRODUCTION_ORIGIN;
+  if (origin === PRODUCTION_ORIGIN) return origin;
+  if (/^https:\/\/[a-z0-9-]+\.footprint-china\.pages\.dev$/.test(origin)) return origin;
+  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return origin;
+  return PRODUCTION_ORIGIN;
+}
 const DEFAULT_COLORS = ['#C9A25E', '#7FB3A3', '#C4574E', '#5B7FA6', '#9B7FB3', '#D08A4E', '#7BA05B', '#C47F9B'];
 const MAX_MEMBERS = 8;
 
@@ -30,27 +44,28 @@ function isValidPin(password) {
   return /^\d{4}$/.test(password);
 }
 
-function corsHeaders() {
+function corsHeaders(origin = PRODUCTION_ORIGIN) {
   return {
-    'Access-Control-Allow-Origin': ALLOWED_ORIGIN,
+    'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     'Access-Control-Max-Age': '86400',
+    'Vary': 'Origin',
   };
 }
 
-function jsonResponse(data, status = 200) {
+function jsonResponse(data, status = 200, origin = PRODUCTION_ORIGIN) {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
-      ...corsHeaders(),
+      ...corsHeaders(origin),
     },
   });
 }
 
-function errorResponse(message, status = 400) {
-  return jsonResponse({ error: message }, status);
+function errorResponse(message, status = 400, origin = PRODUCTION_ORIGIN) {
+  return jsonResponse({ error: message }, status, origin);
 }
 
 function generateRoomCode() {
@@ -427,10 +442,16 @@ function mergeFootprints(fromFp, toFp) {
 
 export default {
   async fetch(request, env, ctx) {
+    // 本次请求的放行源（正式站 / Pages 预览 / 本地），其余一律回落正式站
+    const reqOrigin = resolveAllowedOrigin(request.headers.get('Origin'));
+    // fetch 内所有 JSON 回复统一带本次放行源（避免逐处改 59 个调用点）
+    const reply = (data, status = 200) => jsonResponse(data, status, reqOrigin);
+    const fail = (message, status = 400) => errorResponse(message, status, reqOrigin);
+
     if (request.method === 'OPTIONS') {
       return new Response(null, {
         status: 204,
-        headers: corsHeaders(),
+        headers: corsHeaders(reqOrigin),
       });
     }
 
@@ -439,7 +460,7 @@ export default {
       await ensureSchema(env);
     } catch (err) {
       console.error('Schema init failed:', err);
-      return errorResponse('数据库初始化失败', 500);
+      return fail('数据库初始化失败', 500);
     }
 
     const url = new URL(request.url);
@@ -490,14 +511,14 @@ export default {
         }
         user.updatedAt = now;
         await putUser(env, user);
-        return jsonResponse({ ok: true });
+        return reply({ ok: true });
       }
 
       // GET /api/users/:userId — 拉取用户档案
       if (method === 'GET' && userPutMatch) {
         const user = await getUser(env, userPutMatch[1]);
-        if (!user) return errorResponse('用户不存在', 404);
-        return jsonResponse(user);
+        if (!user) return fail('用户不存在', 404);
+        return reply(user);
       }
 
       /* ============ 房间 API ============ */
@@ -528,11 +549,11 @@ export default {
           // 密码为 4 位数字，唯一性检查（rooms.password 唯一索引）
           if (password) {
             if (!/^\d{4}$/.test(password)) {
-              return errorResponse('密码必须为 4 位数字', 400);
+              return fail('密码必须为 4 位数字', 400);
             }
             const existingCode = await findRoomCodeByPassword(env, password);
             if (existingCode) {
-              return errorResponse('该密码已被使用，请换一个', 400);
+              return fail('该密码已被使用，请换一个', 400);
             }
           }
 
@@ -565,7 +586,7 @@ export default {
             room.password = password;
           }
           await putRoom(env, room);
-          return jsonResponse({ code }, 201);
+          return reply({ code }, 201);
         }
 
         // 旧流程兼容：{name} 为创建者昵称
@@ -588,7 +609,7 @@ export default {
           createdAt: now,
           memberUserIds: [{ userId, joinedAt: now }],
         });
-        return jsonResponse({ code, memberId: userId }, 201);
+        return reply({ code, memberId: userId }, 201);
       }
 
       // ========== v2 用户系统：注册/登录/改密码 ==========
@@ -601,15 +622,15 @@ export default {
         const nickname = (body.nickname || username).trim().slice(0, 20) || username;
 
         if (!isValidUsername(username)) {
-          return errorResponse('用户名需为 2-12 个字符（中文/字母/数字/下划线）', 400);
+          return fail('用户名需为 2-12 个字符（中文/字母/数字/下划线）', 400);
         }
         if (!isValidPin(password)) {
-          return errorResponse('密码必须为 4 位数字', 400);
+          return fail('密码必须为 4 位数字', 400);
         }
         // 用户名全站唯一（v2 用户名即 userId，users 表主键/唯一索引保证）
         const existing = await getUser(env, username);
         if (existing) {
-          return errorResponse('用户名已被注册', 409);
+          return fail('用户名已被注册', 409);
         }
         const now = Date.now();
         const user = {
@@ -628,7 +649,7 @@ export default {
         await putUser(env, user);
         // 返回时去掉密码哈希
         const { passwordHash, ...safe } = user;
-        return jsonResponse({ user: safe }, 201);
+        return reply({ user: safe }, 201);
       }
 
       // POST /api/auth/login — 登录 {username, password}
@@ -637,18 +658,18 @@ export default {
         const username = (body.username || '').trim();
         const password = (body.password || '').trim();
         if (!username || !password) {
-          return errorResponse('请输入用户名和密码', 400);
+          return fail('请输入用户名和密码', 400);
         }
         const user = await getUser(env, username);
         if (!user || !user.passwordHash) {
-          return errorResponse('用户名或密码错误', 401);
+          return fail('用户名或密码错误', 401);
         }
         const hash = await hashPassword(username, password);
         if (hash !== user.passwordHash) {
-          return errorResponse('用户名或密码错误', 401);
+          return fail('用户名或密码错误', 401);
         }
         const { passwordHash, ...safe } = user;
-        return jsonResponse({ user: safe });
+        return reply({ user: safe });
       }
 
       // POST /api/auth/change-password — 改密码 {username, oldPassword, newPassword}
@@ -658,26 +679,26 @@ export default {
         const oldPassword = (body.oldPassword || '').trim();
         const newPassword = (body.newPassword || '').trim();
         if (!isValidPin(newPassword)) {
-          return errorResponse('新密码必须为 4 位数字', 400);
+          return fail('新密码必须为 4 位数字', 400);
         }
         const user = await getUser(env, username);
         if (!user || !user.passwordHash) {
-          return errorResponse('用户不存在', 404);
+          return fail('用户不存在', 404);
         }
         const oldHash = await hashPassword(username, oldPassword);
         if (oldHash !== user.passwordHash) {
-          return errorResponse('原密码错误', 401);
+          return fail('原密码错误', 401);
         }
         user.passwordHash = await hashPassword(username, newPassword);
         user.updatedAt = Date.now();
         await putUser(env, user);
-        return jsonResponse({ ok: true });
+        return reply({ ok: true });
       }
 
       // GET /api/auth/find-legacy?nickname=xxx — 按昵称查找老用户（用于领回数据）
       if (method === 'GET' && pathname === '/api/auth/find-legacy') {
         const nickname = (url.searchParams.get('nickname') || '').trim();
-        if (!nickname) return errorResponse('请输入昵称', 400);
+        if (!nickname) return fail('请输入昵称', 400);
         // D1 直接按昵称查未迁移的老用户（v1 的 user_id 以 m_ 开头）
         const res = await env.DB.prepare(
           "SELECT * FROM users WHERE nickname = ? AND merged_into IS NULL AND v2 = 0 AND user_id LIKE 'm_%'"
@@ -697,7 +718,7 @@ export default {
             roomCodes: user.roomCodes || [],
           });
         }
-        return jsonResponse({ matches });
+        return reply({ matches });
       }
 
       // POST /api/auth/claim-legacy — 老数据领回 {nickname, password, roomCode?}
@@ -706,8 +727,8 @@ export default {
         const body = await readBody();
         const nickname = (body.nickname || '').trim();
         const password = (body.password || '').trim();
-        if (!nickname) return errorResponse('请输入原来的昵称', 400);
-        if (!isValidPin(password)) return errorResponse('密码必须为 4 位数字', 400);
+        if (!nickname) return fail('请输入原来的昵称', 400);
+        if (!isValidPin(password)) return fail('密码必须为 4 位数字', 400);
         // 用户名默认为昵称拼音化？不，直接用昵称作用户名（需符合规则）
         // 若昵称不符合用户名规则，用 nickname 的 hash 生成
         let username = nickname;
@@ -718,7 +739,7 @@ export default {
         // 检查用户名是否已被占用
         const acctUser = await getUser(env, username);
         if (acctUser) {
-          return errorResponse(`"${username}" 已被注册，请换个用户名或联系家人`, 409);
+          return fail(`"${username}" 已被注册，请换个用户名或联系家人`, 409);
         }
         // 查找老数据：在所有 user:{m_*} 中找昵称匹配的
         // 为简化，要求前端传入老 userId（从房间成员列表获取）
@@ -764,7 +785,7 @@ export default {
           await putUser(env, legacyUser);
         }
         const { passwordHash, ...safe } = newUser;
-        return jsonResponse({ user: safe }, 201);
+        return reply({ user: safe }, 201);
       }
 
       // GET /api/rooms — 列出所有房间（供加入时浏览）
@@ -782,17 +803,17 @@ export default {
           hasPassword: !!row.password,
           createdAt: row.created_at || 0,
         }));
-        return jsonResponse({ rooms });
+        return reply({ rooms });
       }
 
       // GET /api/rooms/by-password/:password — 根据密码查房间码（用于密码加入）
       const pwdMatch = pathname.match(/^\/api\/rooms\/by-password\/(.+)$/);
       if (method === 'GET' && pwdMatch) {
         const password = decodeURIComponent(pwdMatch[1]).trim();
-        if (!/^\d{4}$/.test(password)) return errorResponse('密码为 4 位数字', 400);
+        if (!/^\d{4}$/.test(password)) return fail('密码为 4 位数字', 400);
         const code = await findRoomCodeByPassword(env, password);
-        if (!code) return errorResponse('密码不正确或房间不存在', 404);
-        return jsonResponse({ code });
+        if (!code) return fail('密码不正确或房间不存在', 404);
+        return reply({ code });
       }
 
       // GET /api/rooms/:code — 房间详情（含成员足迹）
@@ -801,11 +822,11 @@ export default {
       if (roomMatch && (method === 'GET' || method === 'PATCH')) {
         const code = roomMatch[1];
         const room = await getRoom(env, code);
-        if (!room) return errorResponse('房间不存在', 404);
+        if (!room) return fail('房间不存在', 404);
 
         if (method === 'GET') {
           const members = await getRoomMembers(env, room);
-          return jsonResponse({
+          return reply({
             code: room.code,
             name: room.name || '家庭房间',
             ownerUserId: room.ownerUserId || null,
@@ -822,7 +843,7 @@ export default {
         if (typeof body.ownerUserId === 'string' && body.ownerUserId) {
           const entries = getMemberEntries(room);
           if (!entries.some((e) => e.userId === body.ownerUserId)) {
-            return errorResponse('新房主必须是房间成员', 400);
+            return fail('新房主必须是房间成员', 400);
           }
           room.ownerUserId = body.ownerUserId;
         }
@@ -830,12 +851,12 @@ export default {
         if (body.password !== undefined) {
           const newPwd = typeof body.password === 'string' ? body.password.trim() : '';
           if (newPwd && !/^\d{4}$/.test(newPwd)) {
-            return errorResponse('密码必须为 4 位数字', 400);
+            return fail('密码必须为 4 位数字', 400);
           }
           if (newPwd) {
             const existingCode = await findRoomCodeByPassword(env, newPwd);
             if (existingCode && existingCode !== code) {
-              return errorResponse('该密码已被使用，请换一个', 400);
+              return fail('该密码已被使用，请换一个', 400);
             }
             room.password = newPwd;
           } else {
@@ -843,7 +864,7 @@ export default {
           }
         }
         await putRoom(env, room);
-        return jsonResponse({ ok: true });
+        return reply({ ok: true });
       }
 
       // POST /api/rooms/:code/join — 加入房间；新流程 {userId}（幂等），旧流程兼容 {name}
@@ -851,7 +872,7 @@ export default {
       if (method === 'POST' && joinMatch) {
         const code = joinMatch[1];
         const room = await getRoom(env, code);
-        if (!room) return errorResponse('房间不存在', 404);
+        if (!room) return fail('房间不存在', 404);
         const body = await readBody();
         const now = Date.now();
 
@@ -861,7 +882,7 @@ export default {
           const entries = getMemberEntries(room);
           const alreadyIn = entries.some((e) => e.userId === userId);
           if (!alreadyIn && entries.length >= MAX_MEMBERS) {
-            return errorResponse(`房间成员已满（上限${MAX_MEMBERS}人）`, 400);
+            return fail(`房间成员已满（上限${MAX_MEMBERS}人）`, 400);
           }
           ensureMember(room, userId, now);
           const user = await getUser(env, userId);
@@ -872,13 +893,13 @@ export default {
           }
           await putRoom(env, room);
           const members = await getRoomMembers(env, room);
-          return jsonResponse({ ok: true, members });
+          return reply({ ok: true, members });
         }
 
         // 旧流程兼容：{name} → 创建用户并加入
         const entries = getMemberEntries(room);
         if (entries.length >= MAX_MEMBERS) {
-          return errorResponse(`房间成员已满（上限${MAX_MEMBERS}人）`, 400);
+          return fail(`房间成员已满（上限${MAX_MEMBERS}人）`, 400);
         }
         const nickname = (body.name || `成员${entries.length + 1}`).trim().slice(0, 20) || `成员${entries.length + 1}`;
         const existingMembers = await getRoomMembers(env, room);
@@ -896,7 +917,7 @@ export default {
         ensureMember(room, userId, now);
         await putRoom(env, room);
         const members = await getRoomMembers(env, room);
-        return jsonResponse({ memberId: userId, members });
+        return reply({ memberId: userId, members });
       }
 
       // POST /api/rooms/:code/claim — 认领身份：{fromUserId, toUserId}
@@ -904,18 +925,18 @@ export default {
       if (method === 'POST' && claimMatch) {
         const code = claimMatch[1];
         const room = await getRoom(env, code);
-        if (!room) return errorResponse('房间不存在', 404);
+        if (!room) return fail('房间不存在', 404);
         const body = await readBody();
         const fromUserId = body.fromUserId ? String(body.fromUserId) : '';
         const toUserId = body.toUserId ? String(body.toUserId) : '';
-        if (!fromUserId || !toUserId) return errorResponse('缺少 fromUserId 或 toUserId', 400);
-        if (fromUserId === toUserId) return errorResponse('不能认领自己', 400);
+        if (!fromUserId || !toUserId) return fail('缺少 fromUserId 或 toUserId', 400);
+        if (fromUserId === toUserId) return fail('不能认领自己', 400);
 
         const fromUser = await getUser(env, fromUserId);
         const toUser = await getUser(env, toUserId);
-        if (!fromUser) return errorResponse('被认领的用户不存在', 404);
-        if (!toUser) return errorResponse('当前用户不存在', 404);
-        if (fromUser.mergedInto) return errorResponse('该身份已被认领过', 400);
+        if (!fromUser) return fail('被认领的用户不存在', 404);
+        if (!toUser) return fail('当前用户不存在', 404);
+        if (fromUser.mergedInto) return fail('该身份已被认领过', 400);
 
         const now = Date.now();
         // 合并足迹与房间列表，采用被认领者的昵称配色
@@ -949,7 +970,7 @@ export default {
         if (room.ownerUserId === fromUserId) room.ownerUserId = toUserId;
         await putRoom(env, room);
 
-        return jsonResponse({ ok: true });
+        return reply({ ok: true });
       }
 
       // POST /api/rooms/:code/leave — 退出房间；房主退出最早加入者继任，房空删房间
@@ -957,10 +978,10 @@ export default {
       if (method === 'POST' && leaveMatch) {
         const code = leaveMatch[1];
         const room = await getRoom(env, code);
-        if (!room) return errorResponse('房间不存在', 404);
+        if (!room) return fail('房间不存在', 404);
         const body = await readBody();
         const userId = body.userId ? String(body.userId) : '';
-        if (!userId) return errorResponse('缺少 userId', 400);
+        if (!userId) return fail('缺少 userId', 400);
 
         const { wasOwner } = removeMember(room, userId);
         const user = await getUser(env, userId);
@@ -972,11 +993,11 @@ export default {
 
         if (getMemberEntries(room).length === 0) {
           await deleteRoom(env, code);
-          return jsonResponse({ ok: true });
+          return reply({ ok: true });
         }
         if (wasOwner) succeedOwner(room);
         await putRoom(env, room);
-        return jsonResponse({ ok: true });
+        return reply({ ok: true });
       }
 
       // PUT /api/rooms/:code/members/:id — 旧客户端兼容：写入 user:{id} 并确保进房间名单
@@ -1018,13 +1039,13 @@ export default {
           ensureMember(room, memberId, now);
           await putRoom(env, room);
         }
-        return jsonResponse({ ok: true });
+        return reply({ ok: true });
       }
 
       if (memberMatch && method === 'DELETE') {
         const [, code, userId] = memberMatch;
         const room = await getRoom(env, code);
-        if (!room) return errorResponse('房间不存在', 404);
+        if (!room) return fail('房间不存在', 404);
 
         const { wasOwner } = removeMember(room, userId);
         const user = await getUser(env, userId);
@@ -1036,17 +1057,17 @@ export default {
 
         if (getMemberEntries(room).length === 0) {
           await deleteRoom(env, code);
-          return jsonResponse({ ok: true });
+          return reply({ ok: true });
         }
         if (wasOwner) succeedOwner(room);
         await putRoom(env, room);
-        return jsonResponse({ ok: true });
+        return reply({ ok: true });
       }
 
-      return errorResponse('未找到对应的 API 接口', 404);
+      return fail('未找到对应的 API 接口', 404);
     } catch (err) {
       console.error('Worker request error:', err);
-      return errorResponse('服务器内部错误', 500);
+      return fail('服务器内部错误', 500);
     }
   },
 };
