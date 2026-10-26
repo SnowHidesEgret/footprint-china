@@ -3,10 +3,10 @@
  * v5: 用户身份解耦（users + footprints），房间列表化（rooms），支持大厅与认领
  * 本地多用户隔离 + 老数据平滑迁移 + 离线缓存
  */
-import { TOTAL_PROVINCES, MAX_MEMBERS, MEMBER_COLORS } from './config.js?v=20261005y';
-import { storage } from './geo.js?v=20261005y';
-import { KNOWN_ACHIEVEMENTS } from './achievements.js?v=20261005y';
-import { spotKey } from './spots.js?v=20261005y';
+import { TOTAL_PROVINCES, MAX_MEMBERS, MEMBER_COLORS } from './config.js?v=20261005z';
+import { storage } from './geo.js?v=20261005z';
+import { KNOWN_ACHIEVEMENTS } from './achievements.js?v=20261005z';
+import { spotKey } from './spots.js?v=20261005z';
 
 const VALID_THEMES = ['dark', 'light'];
 
@@ -357,6 +357,9 @@ class Store {
     if (!cloudUser || !cloudUser.userId) return false;
     const now = Date.now();
     const fp = cloudUser.footprint || {};
+    // 切换账号时（本地原本是另一个人），旧房间条目里的 role（房主/成员）、名称都属于上一个人，
+    // 绝不能沿用——否则会出现「妈妈的大厅里显示爸爸的房主身份」这类串号。
+    const sameUser = this.state.activeUserId === cloudUser.userId;
     this.state.users = [{
       userId: cloudUser.userId,
       nickname: cloudUser.nickname || cloudUser.username || '我',
@@ -376,18 +379,43 @@ class Store {
       },
     };
     this.state.activeUserId = cloudUser.userId;
-    // 房间以云端 roomCodes 为准（名称进大厅后刷新）
+    // 房间以云端 roomCodes 为准（名称/房主身份进大厅后由 updateRoomMeta 按服务端刷新）
     const codes = Array.isArray(cloudUser.roomCodes) ? cloudUser.roomCodes : [];
-    const oldRooms = this.state.rooms || [];
+    const oldRooms = sameUser ? (this.state.rooms || []) : [];
     this.state.rooms = codes.map((code) => {
       const old = oldRooms.find((r) => r.code === code);
-      return old || { code, name: '家庭房间', role: 'member', lastOpenedAt: now };
+      return old || { code, name: '家庭房间', role: 'member', joinedAt: now, lastOpenedAt: now };
     });
-    if (this.state.activeRoomCode && !codes.includes(this.state.activeRoomCode)) {
+    if (!this.state.activeRoomCode || !codes.includes(this.state.activeRoomCode)) {
       this.state.activeRoomCode = codes[0] || null;
     }
+    if (!sameUser) this.state.pkMode = false;
     this._commit();
     return true;
+  }
+
+  /**
+   * v2：退出登录后清空本地账号数据（足迹 / 房间 / 身份），只保留主题、音效等设备偏好。
+   * 留下一个 anon_ 空白占位身份让渲染代码不至于拿到 null；sync.js 永不上传 anon_ 身份。
+   * @param {{persist?: boolean}} opts persist=false 时只清内存视图、不改 localStorage
+   *   （无会话打开页面时用：登录页背后的地图不显示任何人的足迹，但不主动销毁本机旧数据）
+   */
+  resetLocal({ persist = true } = {}) {
+    const now = Date.now();
+    const userId = 'anon_' + now.toString(36);
+    this.state.users = [{ userId, nickname: '未登录', color: MEMBER_COLORS[0].value, createdAt: now, updatedAt: now }];
+    this.state.footprints = {
+      [userId]: { provinces: {}, cities: {}, unlockedAchievements: [], maxTitleLevel: 0, spots: {}, memos: {}, updatedAt: now },
+    };
+    this.state.activeUserId = userId;
+    this.state.rooms = [];
+    this.state.activeRoomCode = null;
+    this.state.pkMode = false;
+    if (persist) {
+      this._commit(true); // 不通知订阅者：避免触发自动同步等副作用，调用方随后会刷新页面
+    } else {
+      this._syncActiveUser();
+    }
   }
 
   /**
@@ -486,6 +514,32 @@ class Store {
     room.name = name.trim().slice(0, 20);
     this._commit();
     return true;
+  }
+
+  /**
+   * v2：用服务端房间信息校正本地房间条目（名称 + 是否房主）。
+   * 退出/切换后本地房间只剩云端 roomCodes，名称是占位「家庭房间」、身份一律 member，
+   * 大厅拉到房间详情后调用本方法刷新。无变化时不提交，避免无谓的重渲染。
+   * @returns {boolean} 是否有变化
+   */
+  updateRoomMeta(code, { name, ownerUserId } = {}) {
+    const room = this.state.rooms.find((r) => r.code === code);
+    if (!room) return false;
+    let changed = false;
+    const cleanName = typeof name === 'string' ? name.trim().slice(0, 20) : '';
+    if (cleanName && cleanName !== room.name) {
+      room.name = cleanName;
+      changed = true;
+    }
+    if (typeof ownerUserId === 'string' && ownerUserId) {
+      const role = ownerUserId === this.state.activeUserId ? 'owner' : 'member';
+      if (role !== room.role) {
+        room.role = role;
+        changed = true;
+      }
+    }
+    if (changed) this._commit();
+    return changed;
   }
 
   /* ========== 兼容层（供 main.js 旧代码过渡） ========== */

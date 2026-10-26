@@ -2,12 +2,12 @@
  * 点亮中国 · 入口：组装地图 / 状态 / 视听反馈与交互
  * 包含 Phase 2（音效/粒子/成就/城市下钻/称号/主题）与 Phase 3（多用户云同步/PK透视对战）
  */
-import { TOTAL_PROVINCES, MAX_MEMBERS, MEMBER_COLORS } from './config.js?v=20261005y';
-import { loadGeo, loadCityGeo, isCityGeoLoaded, getLoadedCityGeo } from './geo.js?v=20261005y';
-import { store } from './store.js?v=20261005y';
-import { buildMainMap, buildInset, applyThemeVars } from './map.js?v=20261005y';
-import { ensureCtx, setEnabled as setAudioEnabled, playLight, playUnlight, playAchievement } from './audio.js?v=20261005y';
-import { initParticles, burst as burstParticles, confetti as confettiParticles, setParticlesTheme, resizeParticles } from './particles.js?v=20261005y';
+import { TOTAL_PROVINCES, MAX_MEMBERS, MEMBER_COLORS } from './config.js?v=20261005z';
+import { loadGeo, loadCityGeo, isCityGeoLoaded, getLoadedCityGeo } from './geo.js?v=20261005z';
+import { store } from './store.js?v=20261005z';
+import { buildMainMap, buildInset, applyThemeVars } from './map.js?v=20261005z';
+import { ensureCtx, setEnabled as setAudioEnabled, playLight, playUnlight, playAchievement } from './audio.js?v=20261005z';
+import { initParticles, burst as burstParticles, confetti as confettiParticles, setParticlesTheme, resizeParticles } from './particles.js?v=20261005z';
 import {
   TITLES,
   ACHIEVEMENTS,
@@ -15,7 +15,7 @@ import {
   initProvinceAdcodes,
   getAdcode,
   checkAchievements,
-} from './achievements.js?v=20261005y';
+} from './achievements.js?v=20261005z';
 import {
   loadSpots,
   getSpotTotal,
@@ -24,9 +24,9 @@ import {
   getSpotTitleByCount,
   SPOT_TITLES,
   CAT_LABELS,
-} from './spots.js?v=20261005y';
-import { loadPoetry, getPoetry } from './poetry.js?v=20261005y';
-import { initLobby, showLobby, hideLobby } from './lobby.js?v=20261005y';
+} from './spots.js?v=20261005z';
+import { loadPoetry, getPoetry } from './poetry.js?v=20261005z';
+import { initLobby, showLobby, hideLobby } from './lobby.js?v=20261005z';
 import {
   initSync,
   createRoom,
@@ -42,17 +42,19 @@ import {
   listRooms,
   apiRequest,
   setGuestMode,
-} from './sync.js?v=20261005y';
+  markSynced,
+  pauseSync,
+} from './sync.js?v=20261005z';
 import {
   getSession,
-  saveSession,
-  clearSession,
   isGuest,
   isUser,
   getGuestFootprint,
   saveGuestFootprint,
-} from './auth.js?v=20261005y';
-import { initAuthUI, showAuth, hideAuth } from './auth-ui.js?v=20261005y';
+  rememberAccount,
+} from './auth.js?v=20261005z';
+import { initAuthUI, showAuth, hideAuth } from './auth-ui.js?v=20261005z';
+import { commitSession, logout, syncSessionNickname } from './account.js?v=20261005z';
 
 const $ = (id) => document.getElementById(id);
 const isTouch = matchMedia('(pointer: coarse)').matches;
@@ -81,6 +83,9 @@ async function refreshRoomMembers(code) {
     if (data && Array.isArray(data.members)) {
       roomMembersCache = data.members;
       roomMembersCode = code;
+      if (typeof store.updateRoomMeta === 'function') {
+        store.updateRoomMeta(code, { name: data.name, ownerUserId: data.ownerUserId });
+      }
     }
   } catch {
     // 离线时保持旧缓存
@@ -618,7 +623,13 @@ function closeConfirm(val) {
     confirmResolve = null;
   }
 }
-function confirmDialog(message, { confirmText = '确定', danger = false } = {}) {
+document.addEventListener('keydown', (e) => {
+  if ((e.key === 'Escape' || e.key === 'Esc') && confirmResolve) {
+    e.stopImmediatePropagation();
+    closeConfirm(false);
+  }
+});
+function confirmDialog(message, { confirmText = '确定', danger = false, above = false } = {}) {
   return new Promise((resolve) => {
     let bd = document.getElementById('confirm-backdrop');
     if (!bd) {
@@ -642,10 +653,8 @@ function confirmDialog(message, { confirmText = '确定', danger = false } = {})
       bd.addEventListener('click', (e) => {
         if (e.target === bd) closeConfirm(false);
       });
-      document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && confirmResolve) closeConfirm(false);
-      });
     }
+    bd.style.zIndex = above ? '1100' : '90';
     confirmResolve = resolve;
     bd.querySelector('#confirm-msg').textContent = message;
     const okBtn = bd.querySelector('#confirm-ok-btn');
@@ -1339,6 +1348,9 @@ function renderFamilyModal() {
           const newName = input.value.trim().slice(0, 10);
           if (newName && newName !== member.name) {
             store.updateMember(id, { name: newName });
+            if (id === store.getActiveUserId()) {
+              syncSessionNickname(newName);
+            }
             const rc = store.getRoomCode();
             if (rc) {
               const m2 = store.getMembers().find((x) => x.id === id);
@@ -1938,10 +1950,17 @@ function buildAll() {
 }
 
 async function init() {
+  initAuthUI({
+    onAuthed: (newSession, user) => commitSession(store, newSession, user, { confirm: confirmDialog, toast }),
+    onCancel: () => hideAuth(),
+    confirm: confirmDialog,
+  });
+
   // v2：检查登录会话
   const session = getSession();
   if (!session) {
-    // 无会话，显示登录页，等待用户操作
+    // 无会话：先清空内存视图（不销毁本机存储），确保登录页背后的地图不显示上一人的足迹
+    store.resetLocal({ persist: false });
     // 先加载地图底图（不阻塞登录）
     try {
       const geo = await loadGeo();
@@ -1953,18 +1972,23 @@ async function init() {
     }
     buildAll();
     $('loading').style.display = 'none';
-    initAuthUI({
-      onAuthed: (newSession, user) => {
-        // 登录/注册/游客成功后，重新初始化
-        location.reload();
-      },
-    });
-    showAuth();
+    showAuth({ mode: 'initial' });
     return;
   }
 
   // 有会话，继续正常初始化
   window._v2_session = session;
+  const openSwitchAuth = (tab = 'login') => {
+    hideLobby();
+    const curUser = store.getActiveUser();
+    const currentName = (curUser && curUser.nickname) || session.nickname || session.username || '当前账号';
+    showAuth({ mode: 'switch', tab, currentName });
+  };
+  const handleLogout = () => {
+    hideLobby();
+    logout(store, { toast });
+  };
+
   if (isGuest(session)) {
     document.getElementById('guest-banner').style.display = 'flex';
     // 游客：隐藏 PK 按钮
@@ -1974,28 +1998,67 @@ async function init() {
     setGuestMode(true, (fp) => {
       saveGuestFootprint(session.guestId, fp);
     });
-    // 游客横幅按钮
+    // 游客横幅按钮：去注册 / 切换账号 / 退出
     document.getElementById('guest-register-btn').addEventListener('click', () => {
-      clearSession();
-      location.reload();
+      openSwitchAuth('register');
     });
+    const guestSwitchBtn = document.getElementById('guest-switch-btn');
+    if (guestSwitchBtn) {
+      guestSwitchBtn.addEventListener('click', () => {
+        openSwitchAuth('login');
+      });
+    }
     document.getElementById('guest-logout-btn').addEventListener('click', () => {
-      clearSession();
-      location.reload();
+      handleLogout();
     });
     // 游客：本地只保留游客本人（清掉旧账号残留显示）
     store.applyGuestProfile(session, getGuestFootprint(session.guestId));
+    markSynced(store);
+    rememberAccount(session);
   } else if (isUser(session)) {
+    // 注册用户：显示头部切换账号/退出登录入口
+    const accountBar = document.getElementById('user-account-bar');
+    if (accountBar) accountBar.style.display = 'inline-flex';
+    const switchBtn = document.getElementById('account-switch-btn');
+    if (switchBtn) switchBtn.addEventListener('click', () => openSwitchAuth('login'));
+    const logoutBtn = document.getElementById('account-logout-btn');
+    if (logoutBtn) logoutBtn.addEventListener('click', handleLogout);
+
     // 注册用户：拉云端档案覆盖本地（本地旧数据不得串到新账号上）
+    let loadedCloud = false;
     try {
       const cloudUser = await apiRequest(`/api/users/${encodeURIComponent(session.username)}`);
       if (cloudUser && cloudUser.userId) {
         store.applyCloudProfile(cloudUser);
+        markSynced(store);
+        syncSessionNickname(cloudUser.nickname || session.nickname || session.username);
+        loadedCloud = true;
       }
     } catch {
       console.warn('云端档案拉取失败，沿用本地数据');
     }
+    if (!loadedCloud) {
+      rememberAccount(session);
+      if (store.getActiveUserId() !== session.username) {
+        // 本地缓存不是当前用户时，绝不展示旧人数据，且暂停上传以防空档案覆盖云端
+        store.applyCloudProfile({
+          userId: session.username,
+          username: session.username,
+          nickname: session.nickname || session.username,
+          footprint: {},
+          roomCodes: [],
+        });
+        pauseSync(true);
+      } else {
+        markSynced(store);
+      }
+    }
   }
+
+  const lobbySwitchBtn = document.getElementById('lobby-switch-btn');
+  if (lobbySwitchBtn) lobbySwitchBtn.addEventListener('click', () => openSwitchAuth('login'));
+  const lobbyLogoutBtn = document.getElementById('lobby-logout-btn');
+  if (lobbyLogoutBtn) lobbyLogoutBtn.addEventListener('click', handleLogout);
 
   try {
     const geo = await loadGeo();
@@ -2179,6 +2242,10 @@ async function promptIdentityOnEnter(code) {
       renderFamilyModal();
     },
     onUserSwitched: () => {
+      const activeUser = store.getActiveUser();
+      if (activeUser && activeUser.nickname) {
+        syncSessionNickname(activeUser.nickname);
+      }
       renderMemberButton();
       renderProgress(false);
       if (mapApi) {

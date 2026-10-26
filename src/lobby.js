@@ -84,6 +84,11 @@ async function renderRoomMembers() {
   listEl.innerHTML = '<div class="lobby-empty">加载中…</div>';
   try {
     const data = await syncRef.fetchRoom(activeCode);
+    if (data && typeof storeRef.updateRoomMeta === 'function') {
+      storeRef.updateRoomMeta(activeCode, { name: data.name, ownerUserId: data.ownerUserId });
+      const latestRoom = storeRef.getRooms().find((r) => r.code === activeCode);
+      if (nameEl && latestRoom) nameEl.textContent = `（${latestRoom.name}）`;
+    }
     const members = (data && Array.isArray(data.members)) ? data.members : [];
     const meId = storeRef.getActiveUserId();
     if (members.length === 0) {
@@ -160,6 +165,11 @@ async function refreshMemberCounts(rooms) {
       const count = data && Array.isArray(data.members) ? data.members.length : 0;
       memberCountCache.set(r.code, { count, at: now });
       updateCountDom(r.code, count);
+      if (data && typeof storeRef.updateRoomMeta === 'function') {
+        if (storeRef.updateRoomMeta(r.code, { name: data.name, ownerUserId: data.ownerUserId })) {
+          renderRooms();
+        }
+      }
     } catch { /* 离线时保持占位 */ }
   }));
 }
