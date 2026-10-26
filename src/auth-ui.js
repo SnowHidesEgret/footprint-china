@@ -21,8 +21,8 @@ import {
   getKnownAccounts,
   forgetAccount,
   accountKey,
-} from './auth.js?v=20261005z';
-import { apiRequest } from './sync.js?v=20261005z';
+} from './auth.js?v=20261026a';
+import { apiRequest } from './sync.js?v=20261026a';
 
 let onAuthed = null; // async (session, cloudUser) => boolean(是否已接手；false 表示被取消)
 let onCancel = null; // () => void（switch 模式点返回）

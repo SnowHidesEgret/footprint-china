@@ -20,7 +20,7 @@ const ACCOUNTS_KEY = 'footprint.accounts.v2';
 const MAX_REMEMBERED_USERS = 8;
 
 // 认证专用请求：直接 fetch，保留服务端错误信息（sync.js 的 apiRequest 失败时只回 null）
-import { SYNC_API_BASE } from './config.js?v=20261005z';
+import { SYNC_API_BASE } from './config.js?v=20261026a';
 
 async function api(path, body) {
   let res;

@@ -21,6 +21,13 @@
  *      原会话与本地 Store 原封不动；
  *    - `commitSession` 先 `flushSync(store)` 保存旧账号未同步改动，再 `pauseSync(true)` 冻结同步，
  *      随后先用新账号云端/游客档案覆盖本地 Store，最后写新会话并刷新页面。
+ * 5. 游客转正合并（2026-10-26）：
+ *    - 上一会话是游客且有足迹、新会话是注册用户时，若游客足迹里有云端还没有的新点亮，
+ *      弹出确认框询问是否合并；只有用户点了「合并足迹」才上传合并结果；
+ *    - 合并是并集：云端已有的项一律不覆盖（云端为准），只补游客独有的省/市/景点/记忆，
+ *      成就取并集、称号等级取较大值；合并失败时跳过合并、游客档案仍保留在列表里，
+ *      下次从游客切回该账号时可再合（幂等，不会重复计数）；
+ *    - 游客足迹本身不删除：合并后仍可从本机列表切回游客号查看。
  */
 
 import {
@@ -31,8 +38,9 @@ import {
   isGuest,
   isUser,
   getGuestFootprint,
-} from './auth.js?v=20261005z';
-import { flushSync, pauseSync } from './sync.js?v=20261005z';
+  guestHasData,
+} from './auth.js?v=20261026a';
+import { flushSync, pauseSync, putUser } from './sync.js?v=20261026a';
 
 /**
  * 提取当前会话最新昵称（若用户在大厅改过名，以 Store 中活跃用户昵称为准）
@@ -49,6 +57,56 @@ function resolveSessionWithLatestName(store, session) {
     ? activeUser.nickname
     : session.nickname;
   return { ...session, nickname: latestName || session.username || '游客' };
+}
+
+/**
+ * 足迹对象的键列表（非对象时视为空）
+ */
+function mapKeys(obj) {
+  return obj && typeof obj === 'object' ? Object.keys(obj) : [];
+}
+
+/**
+ * 游客足迹相对云端足迹的新增量：只数云端还没有的键（云端已有的不算新增，合并时也不覆盖）
+ * @returns {{provinces: number, cities: number, spots: number, memos: number, total: number}}
+ */
+function diffGuestFootprint(guestFp, targetFp) {
+  const g = guestFp || {};
+  const t = targetFp || {};
+  const fresh = (key) => mapKeys(g[key]).filter(
+    (k) => !(t[key] && typeof t[key] === 'object' && k in t[key])
+  ).length;
+  const provinces = fresh('provinces');
+  const cities = fresh('cities');
+  const spots = fresh('spots');
+  const memos = fresh('memos');
+  return { provinces, cities, spots, memos, total: provinces + cities + spots + memos };
+}
+
+/**
+ * 足迹并集：云端为准（冲突键保留云端值），只补游客独有的键；成就并集，称号等级取大值
+ */
+function unionFootprints(targetFp, guestFp) {
+  const t = targetFp || {};
+  const g = guestFp || {};
+  const mergedSection = (key) => {
+    const base = t[key] && typeof t[key] === 'object' ? t[key] : {};
+    const extra = {};
+    for (const k of mapKeys(g[key])) {
+      if (!(k in base)) extra[k] = g[key][k];
+    }
+    return { ...base, ...extra };
+  };
+  const tAch = Array.isArray(t.unlockedAchievements) ? t.unlockedAchievements : [];
+  const gAch = Array.isArray(g.unlockedAchievements) ? g.unlockedAchievements : [];
+  return {
+    provinces: mergedSection('provinces'),
+    cities: mergedSection('cities'),
+    spots: mergedSection('spots'),
+    memos: mergedSection('memos'),
+    unlockedAchievements: [...new Set([...tAch, ...gAch])],
+    maxTitleLevel: Math.max(t.maxTitleLevel || 0, g.maxTitleLevel || 0),
+  };
 }
 
 /**
@@ -89,27 +147,64 @@ export async function commitSession(store, newSession, cloudUser = null, opts = 
     rememberAccount(resolveSessionWithLatestName(store, curSession));
   }
 
-  // 4. 组装新会话并用新账号档案覆盖本地 Store（防止刷新后因网络抖动残留旧账号数据）
+  // 4. 组装新会话
   const nextSession = {
     ...newSession,
     nickname: (cloudUser && cloudUser.nickname) || newSession.nickname || newSession.username || '游客',
   };
 
+  // 5. 游客转正合并：上一会话是游客且有足迹、新会话是注册用户时，
+  //    若游客足迹里有云端还没有的新点亮，询问是否合并（见模块顶部设计说明 5）
+  let mergedCloudUser = cloudUser;
+  if (store && curSession && isGuest(curSession) && isUser(nextSession) && cloudUser && cloudUser.userId) {
+    const guestFp = getGuestFootprint(curSession.guestId);
+    if (guestHasData(curSession.guestId)) {
+      const diff = diffGuestFootprint(guestFp, cloudUser.footprint || {});
+      if (diff.total > 0 && typeof opts.confirm === 'function') {
+        const parts = [];
+        if (diff.provinces) parts.push(`${diff.provinces} 省`);
+        if (diff.cities) parts.push(`${diff.cities} 市`);
+        if (diff.spots) parts.push(`${diff.spots} 个景点`);
+        if (diff.memos) parts.push(`${diff.memos} 条记忆`);
+        const guestName = curSession.nickname || '游客';
+        const proceed = await opts.confirm(
+          `游客「${guestName}」有 ${parts.join('、')} 是「${nextSession.nickname}」还没有的，是否合并进来？合并后游客档案仍保留，可随时切回查看。`,
+          { confirmText: '合并足迹', above: true }
+        );
+        if (proceed) {
+          const mergedFp = unionFootprints(cloudUser.footprint || {}, guestFp);
+          let ok = false;
+          try {
+            ok = await putUser(nextSession.username, { footprint: mergedFp });
+          } catch {
+            ok = false;
+          }
+          if (ok) {
+            mergedCloudUser = { ...cloudUser, footprint: mergedFp };
+          } else if (typeof opts.toast === 'function') {
+            opts.toast('网络异常，足迹合并未完成；游客档案仍保留，下次切换时可再合并');
+          }
+        }
+      }
+    }
+  }
+
+  // 6. 用新账号档案覆盖本地 Store（防止刷新后因网络抖动残留旧账号数据）
   if (store) {
     if (isGuest(nextSession)) {
       store.applyGuestProfile(nextSession, getGuestFootprint(nextSession.guestId));
-    } else if (isUser(nextSession) && cloudUser && cloudUser.userId) {
-      store.applyCloudProfile(cloudUser);
+    } else if (isUser(nextSession) && mergedCloudUser && mergedCloudUser.userId) {
+      store.applyCloudProfile(mergedCloudUser);
     } else {
       store.resetLocal({ persist: true });
     }
   }
 
-  // 5. 写入新会话并记入本机「曾登录账号」列表
+  // 7. 写入新会话并记入本机「曾登录账号」列表
   saveSession(nextSession);
   rememberAccount(nextSession);
 
-  // 6. 刷新页面，走 main.js 标准初始化流程
+  // 8. 刷新页面，走 main.js 标准初始化流程
   location.reload();
   return true;
 }
